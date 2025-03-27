@@ -1,0 +1,31 @@
+{
+  "git": {
+    "requireBranch": "main",
+    "commitMessage": "Release v${version}",
+    "tagName": "v${version}",
+    "tagAnnotation": "Release v${version}"
+  },
+  "github": {
+    "release": true,
+    "repo": "wernerglinka/metalsmith-plugin-starter",
+    "releaseName": "metalsmith-plugin-starter ${version}",
+    "tokenRef": "GITHUB_TOKEN",
+    "assets": ["metalsmith-plugin-starter-${version}.tgz"]
+  },
+  "npm": {
+    "publish": false
+  },
+  "hooks": {
+    "before:git:release": "npm run changelog",
+    "after:git:bump": "npm run update-coverage",
+    "after:release": "echo 'Successfully released ${name} v${version}. You can now publish this to NPM manually.'"
+  },
+  "plugins": {
+    "@release-it/bumper": {
+      "out": {
+        "file": "README.md",
+        "type": "text/plain"
+      }
+    }
+  }
+}
