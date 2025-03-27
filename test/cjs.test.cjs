@@ -54,4 +54,59 @@ describe('metalsmith-autonav (CommonJS)', () => {
       done();
     });
   });
+  
+  // Test for debug export marker - this tests the CommonJS compatibility code
+  it('should handle debug export marker', (done) => {
+    // Create test environment
+    const files = { 'index.md': { contents: Buffer.from('# Home') } };
+    const metadata = {};
+    const metalsmithMock = { 
+      metadata: () => metadata, 
+      source: () => 'src',
+      destination: () => 'build',
+      debug: () => () => {} 
+    };
+    
+    // Save original process.env.DEBUG_EXPORTS
+    const originalDebugExports = process.env.DEBUG_EXPORTS;
+    
+    try {
+      // Set debug environment
+      process.env.DEBUG_EXPORTS = 'true';
+      
+      // Test that the plugin runs without error in debug mode
+      autonav()(files, metalsmithMock, (err) => {
+        if (err) {
+          return done(err);
+        }
+        
+        // Check navigation was still generated properly
+        assert.strictEqual(typeof metadata.nav, 'object', 'Navigation should be added to metadata even in debug mode');
+        assert.ok(metadata.nav.home, 'Home page should be in navigation');
+        
+        done();
+      });
+    } finally {
+      // Restore original DEBUG_EXPORTS environment
+      process.env.DEBUG_EXPORTS = originalDebugExports;
+    }
+  });
+  
+  // Test the error handling in a CommonJS context
+  it('should handle errors in CommonJS context', (done) => {
+    // Create a problematic setup
+    const files = {};
+    const metalsmithMock = {
+      metadata: () => null, // This will cause an error
+      source: () => 'src',
+      destination: () => 'build',
+      debug: () => () => {}
+    };
+    
+    // Run plugin and expect it to handle errors
+    autonav()(files, metalsmithMock, (err) => {
+      assert.ok(err, 'Should return an error');
+      done();
+    });
+  });
 });

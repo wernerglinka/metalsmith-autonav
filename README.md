@@ -15,7 +15,7 @@ Metalsmith plugin that automatically generates navigation trees and breadcrumb p
 - Sorts navigation items based on custom properties
 - Fully customizable options for determining navigation titles and paths
 - Multiple navigation configurations in a single pass (e.g., header, footer, sidebar)
-- Smart handling of directory nodes and file/directory merging
+- Smart handling of directory nodes in navigation
 - Flexible path handling with permalink support
 - Modern Promise-based API with callback support for backward compatibility
 - Supports both ESM and CommonJS module formats
@@ -42,7 +42,7 @@ import autonav from 'metalsmith-autonav';
 
 metalsmith(__dirname)
   .use(markdown()) // Convert Markdown to HTML
-  .use(autonav({  // Then generate navigation AFTER layouts
+  .use(autonav({  // Then generate navigation
     // options go here
     navKey: 'navigation',
     breadcrumbKey: 'breadcrumbs',
@@ -65,7 +65,7 @@ const autonav = require('metalsmith-autonav');
 
 metalsmith(__dirname)
   .use(markdown()) // Convert Markdown to HTML
-  .use(autonav({  // Then generate navigation AFTER layouts
+  .use(autonav({  // Then generate navigation
     // options go here
     navKey: 'navigation',
     breadcrumbKey: 'breadcrumbs',
@@ -82,12 +82,12 @@ metalsmith(__dirname)
 
 The plugin scans all files and generates:
 
-1. A flat navigation structure with all root pages as siblings
+1. A simpleflat navigation structure
 2. Breadcrumb paths in each file's metadata
 
 ### Navigation Structure
 
-The navigation structure features a completely flat organization at the root level, where all pages (including index/home) are siblings. Each page can have its own children, maintaining a hierarchical structure for nested content.
+The navigation structure features a simple flat organization. Each page may have its own children, maintaining a hierarchical structure for nested content.
 
 Each navigation item contains only the essential properties:
 
@@ -95,8 +95,6 @@ Each navigation item contains only the essential properties:
 - `path` - The URL path (following the usePermalinks option setting)
 - `children` - An object containing any child pages (empty object if none exist)
 - `index` - (Optional) Only present if a page has a navIndex value set
-
-Unlike many traditional navigation plugins, this plugin intentionally keeps the home/index page as a sibling to other pages rather than a parent, making it easier to iterate through all pages at the same level.
 
 For example, with this file structure:
 
@@ -160,7 +158,7 @@ The generated navigation object would look like:
 
 Each file will have a breadcrumb array added to its metadata, showing the path from the home page to the current page.
 
-For example, the file `products/product1.md` would have a breadcrumb like:
+For example, the file `products/product1.html` would have a breadcrumb like:
 
 ```javascript
 [
@@ -182,22 +180,20 @@ With `usePermalinks: false`, the paths would include the .html extension:
 
 Example of using breadcrumbs in your templates:
 
-```handlebars
+```nunjucks
 <!-- Display breadcrumbs -->
-<nav aria-label="Breadcrumb">
-  <ol class="breadcrumbs">
-    {{#each breadcrumb}}
-      <li {{#if @last}}aria-current="page"{{/if}}>
-        <a href="{{this.path}}">{{this.title}}</a>
-      </li>
-    {{/each}}
-  </ol>
-</nav>
+<ul class="breadcrumbs">
+  {% for item in breadcrumb %}
+    {% if loop.last %}
+      <li>{{ item.title }}</li>
+    {% else %}
+      <li><a href="{{ item.path }}">{{ item.title }}</a></li>
+    {% endif %}
+  {% endfor %}
+</ul>
 ```
 
 ## Options
-
-> **Note:** The navigation structure is intentionally flat at the root level with the home page (index.html) being a sibling to other pages rather than a parent. This makes it easier to iterate through all pages at the same level using a standard `{{#each}}` loop in your templates.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -212,8 +208,6 @@ Example of using breadcrumbs in your templates:
 | sortReverse | Boolean | false | Reverse sort order |
 | pathFilter | Function | null | Custom function to filter file paths |
 | usePermalinks | Boolean | true | Whether to use permalink-style paths (/about/ instead of /about.html) |
-| includeDirs | Boolean | true | Whether to include directory nodes in the navigation |
-| mergeMatchingFilesAndDirs | Boolean | true | Whether to merge file and directory nodes with matching names |
 | configs | Object | null | Multiple named navigation configurations (see Multiple Navigations example) |
 
 ## Examples
@@ -226,7 +220,6 @@ For Metalsmith v2.5.0 and above, you can use the Promise-based API:
 // With async/await (recommended)
 metalsmith(__dirname)
   .use(markdown())
-  .use(layouts())
   .use(async (files, metalsmith) => {
     // You can await the autonav plugin
     await autonav({
@@ -237,6 +230,7 @@ metalsmith(__dirname)
     // Do something with the navigation data
     console.log('Navigation generated:', metalsmith.metadata().navigation);
   })
+  .use(layouts())
   .build()
   .then(() => console.log('Build complete!'))
   .catch(err => console.error(err));
@@ -244,7 +238,6 @@ metalsmith(__dirname)
 // With promises
 metalsmith(__dirname)
   .use(markdown())
-  .use(layouts())
   .use((files, metalsmith) => {
     return autonav({
       navKey: 'navigation',
@@ -255,6 +248,7 @@ metalsmith(__dirname)
         console.log('Navigation generated:', metalsmith.metadata().navigation);
       });
   })
+  .use(layouts())
   .build()
   .then(() => console.log('Build complete!'))
   .catch(err => console.error(err));
@@ -268,7 +262,7 @@ To customize a page's navigation label, add the `navLabel` property to its front
 
 ```markdown
 ---
-navLabel: My Custom Page Title
+navLabel: My Custom Nav Label
 ---
 ```
 
@@ -315,7 +309,7 @@ metalsmith.use(autonav({
 
 ### Excluding Pages
 
-To exclude a page from navigation:
+To exclude a page from navigation at navExclude to the page frontmatter:
 
 ```markdown
 ---
@@ -325,9 +319,11 @@ navExclude: true
 
 ### Custom Home Link
 
+To customize the home link label and whether to include it in the breadcrumb:
+
 ```javascript
 metalsmith.use(autonav({
-  navHomeLabel: 'Start',
+  navHomeLabel: 'Home',
   navHomePage: true
 }));
 ```
@@ -351,33 +347,20 @@ metalsmith.use(autonav({
 Typical usage with the metalsmith-permalinks plugin:
 
 ```javascript
-// Process markdown and layouts first
-metalsmith.use(markdown())
-  .use(layouts())
+// Process markdown  first
+metalsmith
+  .use(markdown())
   
   // Then run permalinks plugin to transform file paths
   .use(permalinks())
   
-  // Finally run autonav with usePermalinks set to true
+  // Then run autonav with usePermalinks set to true
   .use(autonav({
     usePermalinks: true
-  }));
-```
-
-### Directory Node Handling
-
-Control how directory nodes are included in the navigation:
-
-```javascript
-// Exclude directory nodes entirely (only show pages)
-metalsmith.use(autonav({
-  includeDirs: false
-}));
-
-// Merge matching file and directory nodes (default)
-metalsmith.use(autonav({
-  mergeMatchingFilesAndDirs: true
-}));
+  }))
+  
+  // Finally apply layouts
+  .use(layouts());
 ```
 
 ### Multiple Navigation Configurations
@@ -407,7 +390,6 @@ metalsmith.use(autonav({
       navKey: 'footerNav',
       navExcludeKey: 'excludeFromFooter',
       // No breadcrumbs for footer
-      includeDirs: false,
       sortBy: 'footerOrder'
     },
     
@@ -438,15 +420,6 @@ Then in your templates, access each navigation structure separately:
           {{/each}}
         </ul>
       {{/if}}
-    {{/if}}
-  {{/each}}
-</nav>
-
-<!-- Sidebar navigation -->
-<nav class="side-nav">
-  {{#each metadata.sideNav as |item key|}}
-    {{#if (ne key "home")}} <!-- Skip home in the menu if desired -->
-      <a href="{{item.path}}">{{item.title}}</a>
     {{/if}}
   {{/each}}
 </nav>
@@ -518,6 +491,6 @@ MIT
 [metalsmith-url]: https://metalsmith.io
 [license-badge]: https://img.shields.io/github/license/wernerglinka/metalsmith-autonav
 [license-url]: LICENSE
-[coverage-badge]: https://img.shields.io/badge/test%20coverage-91%25-brightgreen
+[coverage-badge]: https://img.shields.io/badge/test%20coverage-96%25-brightgreen
 [coverage-url]: #test-coverage
 [modules-badge]: https://img.shields.io/badge/modules-ESM%2FCJS-blue

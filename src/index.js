@@ -13,8 +13,6 @@
  * @property {boolean} [sortReverse=false] - Reverse sort order
  * @property {Function} [pathFilter=null] - Custom function to filter file paths
  * @property {boolean} [usePermalinks=true] - Whether to use permalink-style paths (/about/ instead of /about.html)
- * @property {boolean} [includeDirs=true] - Whether to include directory nodes in the navigation
- * @property {boolean} [mergeMatchingFilesAndDirs=true] - Whether to merge file and directory nodes that have matching names
  */
 
 /**
@@ -96,9 +94,7 @@ function autonav(options = {}) {
     sortBy: 'navIndex',
     sortReverse: false,
     pathFilter: null,
-    usePermalinks: true,
-    includeDirs: true,
-    mergeMatchingFilesAndDirs: true
+    usePermalinks: true
   };
 
   return function(files, metalsmith, done) {
@@ -177,7 +173,7 @@ function autonav(options = {}) {
  * @returns {Object} Navigation tree
  */
 function buildNavTree(files, options, debug) {
-  // Create a completely flat structure with all pages as siblings
+  // Create a hierarchical structure with pages nested appropriately
   const tree = {};
   const filePaths = Object.keys(files);
   
@@ -198,9 +194,6 @@ function buildNavTree(files, options, debug) {
       return options.sortReverse ? valB - valA : valA - valB;
     });
   }
-
-  // Track directories we've encountered for merging
-  const dirNodes = new Map();
 
   // Process each file
   filePaths.forEach(filePath => {
@@ -280,13 +273,21 @@ function buildNavTree(files, options, debug) {
       children: {}
     };
     
+    // Mark actual files vs directory nodes
+    navItem.isFile = true;
+    
+    // Mark index files specifically
+    if (filePath.endsWith('index.html') || filePath.endsWith('index.md')) {
+      navItem.isIndexFile = true;
+    }
+    
     // Only add index if it exists (for sorting)
     if (navIndex !== undefined && navIndex !== Infinity) {
       navItem.index = navIndex;
     }
     
     // Add to tree based on path segments
-    addToTree(tree, segments, navItem, filePath, options, dirNodes, debug);
+    addToTree(tree, segments, navItem, filePath, options, debug);
   });
 
   // Sort children in tree
@@ -294,6 +295,7 @@ function buildNavTree(files, options, debug) {
 
   return tree;
 }
+
 
 /**
  * Add navigation item to tree at specified path
@@ -303,12 +305,9 @@ function buildNavTree(files, options, debug) {
  * @param {Object} navItem - Navigation item to add
  * @param {string} filePath - Original file path
  * @param {NavOptions} options - Navigation options
- * @param {Map} dirNodes - Map of directory nodes for merging
  * @param {Function} debug - Debug function
  */
-function addToTree(tree, segments, navItem, filePath, options, dirNodes, debug) {
-  // COMPLETELY FLAT STRUCTURE - All pages are siblings at the top level
-  
+function addToTree(tree, segments, navItem, filePath, options, debug) {
   // For root level files (index.html, about.html)
   if (segments.length === 0) {
     // Get key from filename (without extension)
@@ -323,128 +322,140 @@ function addToTree(tree, segments, navItem, filePath, options, dirNodes, debug) 
     tree[key] = navItem;
     return;
   }
-  
-  // For files with one segment (blog/index.html, blog/post1.html)
-  if (segments.length === 1 || (segments.length === 2 && segments[1] === 'index.html' || segments[1] === 'index.md')) {
-    const parentKey = segments[0];
+
+  // Implement a recursive approach for handling nested paths
+  const buildTreeRecursively = (node, pathSegments, depth = 0) => {
+    // Base case - we've reached the end of the path
+    if (depth >= pathSegments.length) {
+      return node;
+    }
+
+    const segment = pathSegments[depth];
+    const isLastSegment = depth === pathSegments.length - 1;
+    const isIndexFile = isLastSegment && (segment === 'index.html' || segment === 'index.md');
     
-    // If this is an index file (blog/index.html) - it defines the section
-    if (segments.length === 1 && filePath.endsWith('index.html') || filePath.endsWith('index.md')) {
-      // Create or update the section - only essential properties
-      if (!tree[parentKey]) {
-        tree[parentKey] = {
-          title: navItem.title,
-          path: navItem.path,
-          children: {}
-        };
+    // Skip index segment for path building
+    const segmentForPath = segment.replace(/index\.(html|md)$/, '');
+    
+    // Build path up to this point
+    let currentPath = '/';
+    for (let i = 0; i <= depth; i++) {
+      const pathSegment = pathSegments[i].replace(/index\.(html|md)$/, '');
+      if (pathSegment) {
+        currentPath += pathSegment + (i < depth || !options.usePermalinks ? '' : '/');
+      }
+    }
+    
+    // Format path based on permalinks setting
+    let segmentPath = options.usePermalinks 
+      ? currentPath
+      : (isIndexFile ? currentPath : `${currentPath.replace(/\/$/, '')}.html`);
+    
+    if (isIndexFile) {
+      // For index files, update the parent node
+      if (depth > 0) {
+        const parentSegment = pathSegments[depth - 1].replace(/\.(html|md)$/, '');
         
-        // Only copy index if it exists
-        if (navItem.index !== undefined) {
-          tree[parentKey].index = navItem.index;
+        // Get or create the parent node
+        if (!node[parentSegment]) {
+          node[parentSegment] = {
+            title: parentSegment.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+            path: segmentPath,
+            children: {},
+            isDirectory: true
+          };
         }
+        
+        // Update parent with index file attributes
+        // But preserve existing children
+        const existingChildren = node[parentSegment].children || {};
+        
+        // Update with index file info
+        node[parentSegment].title = navItem.title;
+        node[parentSegment].path = navItem.path;
+        node[parentSegment].isIndexFile = true;
+        node[parentSegment].isDirectory = false;
+        
+        // Keep index property if provided
+        if (navItem.index !== undefined) {
+          node[parentSegment].index = navItem.index;
+        }
+        
+        // Preserve children
+        node[parentSegment].children = existingChildren;
+        
+        return node[parentSegment];
       } else {
-        // Update existing entry - only essential properties
-        tree[parentKey].title = navItem.title;
-        tree[parentKey].path = navItem.path;
-        
-        if (navItem.index !== undefined) {
-          tree[parentKey].index = navItem.index;
+        // Root index file
+        if (!node.home) {
+          node.home = navItem;
+        } else {
+          // Update existing home node
+          const existingChildren = node.home.children || {};
+          Object.assign(node.home, navItem);
+          node.home.children = existingChildren;
         }
-        
-        // Preserve any children
-        if (!tree[parentKey].children) {
-          tree[parentKey].children = {};
-        }
+        return node.home;
       }
     } 
-    // For direct child pages (blog/post1.html)
-    else if (segments.length === 1) {
-      const childKey = segments[0] + '/' + filePath.split('/').pop().replace(/\.(html|md)$/, '');
+    else if (isLastSegment) {
+      // Regular file at the end of the path (e.g., about.html)
+      const key = segment.replace(/\.(html|md)$/, '');
       
-      // Create parent section if needed - only essential properties
-      if (!tree[parentKey]) {
-        tree[parentKey] = {
-          title: parentKey.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
-          path: options.usePermalinks ? `/${parentKey}/` : `/${parentKey}/index.html`,
-          children: {}
+      // If one level deep, add directly to tree with the correct key
+      if (depth === 0) {
+        node[key] = navItem;
+        return node[key];
+      } 
+      // Otherwise, add to appropriate parent's children
+      else {
+        // Find or create the parent node
+        const parentKey = pathSegments[depth - 1].replace(/\.(html|md)$/, '');
+        
+        if (!node[parentKey]) {
+          // Create parent path
+          let parentPath = '/';
+          for (let i = 0; i < depth; i++) {
+            const pathSegment = pathSegments[i].replace(/index\.(html|md)$/, '');
+            if (pathSegment) {
+              parentPath += pathSegment + (options.usePermalinks ? '/' : '');
+            }
+          }
+          
+          node[parentKey] = {
+            title: parentKey.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+            path: parentPath,
+            children: {},
+            isDirectory: true
+          };
+        }
+        
+        // Add to parent's children
+        node[parentKey].children[key] = navItem;
+        return node[parentKey].children[key];
+      }
+    } 
+    else {
+      // Intermediate directory in the path
+      const key = segment.replace(/\.(html|md)$/, '');
+      
+      // Create node if it doesn't exist
+      if (!node[key]) {
+        node[key] = {
+          title: key.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+          path: segmentPath,
+          children: {},
+          isDirectory: true
         };
       }
       
-      // Add child to parent's children
-      tree[parentKey].children[childKey.split('/').pop()] = navItem;
+      // Continue to next level
+      return buildTreeRecursively(node[key].children, pathSegments, depth + 1);
     }
-    // For blog/subdir/index.html type paths
-    else if (segments.length === 2 && (segments[1] === 'index.html' || segments[1] === 'index.md')) {
-      const parentKey = segments[0];
-      const childKey = segments[1].replace(/\.(html|md)$/, '');
-      
-      // Create parent section if needed - only essential properties
-      if (!tree[parentKey]) {
-        tree[parentKey] = {
-          title: parentKey.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
-          path: options.usePermalinks ? `/${parentKey}/` : `/${parentKey}/index.html`,
-          children: {}
-        };
-      }
-      
-      // Add the directory as a child - only essential properties
-      const dirKey = segments[0] + '/' + segments[1].replace(/index\.(html|md)$/, '');
-      const key = dirKey.split('/').pop() || segments[0];
-      
-      tree[parentKey].children[key] = {
-        title: navItem.title,
-        path: navItem.path,
-        children: {} // It might have its own children
-      };
-    }
-    return;
-  }
+  };
   
-  // For deeper nested files (blog/category/post.html, blog/category/subcat/post.html)
-  // We're only supporting one level of nesting for simplicity in the flat structure
-  const topLevelKey = segments[0];
-  
-  // Create section if needed - only essential properties
-  if (!tree[topLevelKey]) {
-    tree[topLevelKey] = {
-      title: topLevelKey.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
-      path: options.usePermalinks ? `/${topLevelKey}/` : `/${topLevelKey}/index.html`,
-      children: {}
-    };
-  }
-  
-  // Get or create the child section
-  const childKey = segments[1];
-  
-  if (!tree[topLevelKey].children[childKey]) {
-    tree[topLevelKey].children[childKey] = {
-      title: childKey.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
-      path: options.usePermalinks ? `/${topLevelKey}/${childKey}/` : `/${topLevelKey}/${childKey}/index.html`,
-      children: {}
-    };
-  }
-  
-  // If this is the final file
-  if (segments.length === 2 && !(filePath.endsWith('index.html') || filePath.endsWith('index.md'))) {
-    // It's a direct child of the child section
-    tree[topLevelKey].children[childKey] = navItem;
-  } 
-  // If this is an index file for the subsection
-  else if (segments.length === 2 && (filePath.endsWith('index.html') || filePath.endsWith('index.md'))) {
-    // Update properties but keep children
-    const children = tree[topLevelKey].children[childKey].children;
-    Object.keys(navItem).forEach(key => {
-      if (key !== 'children') {
-        tree[topLevelKey].children[childKey][key] = navItem[key];
-      }
-    });
-    tree[topLevelKey].children[childKey].children = children;
-  }
-  // For deeper nesting, add to the appropriate section's children
-  else {
-    const fileKey = segments[segments.length - 1].replace(/\.(html|md)$/, '');
-    tree[topLevelKey].children[childKey].children[fileKey] = navItem;
-  }
+  // Start recursive tree building
+  buildTreeRecursively(tree, segments.concat(filePath.split('/').pop()), 0);
 }
 
 /**
@@ -472,7 +483,7 @@ function sortTree(tree, options) {
       const [, itemA] = a;
       const [, itemB] = b;
       
-      // If one item is a directory and one is a file, directories come first by default
+      // Standard directory sorting - directories come first by default
       if (itemA.isDirectory && !itemB.isDirectory) {
         return -1;
       }
@@ -513,12 +524,8 @@ function sortTree(tree, options) {
       // Apply the same sorting logic to children
       childrenArray.sort((a, b) => {
         // If one item is a directory and one is a file, directories come first by default
-        if (a.isDirectory && !b.isDirectory) {
-          return -1;
-        }
-        if (!a.isDirectory && b.isDirectory) {
-          return 1;
-        }
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
         
         // Otherwise, sort by the specified property or index
         const propName = options.sortBy || 'index';
@@ -542,7 +549,7 @@ function sortTree(tree, options) {
         
         // Recursively sort any deeper children
         if (rest.children && Object.keys(rest.children).length > 0) {
-          sortTree(rest, options);
+          sortTree(rest.children, options);
         }
       });
     }
