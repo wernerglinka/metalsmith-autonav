@@ -25,9 +25,9 @@
     "prerelease": "npm run update-coverage && git add README.md && git commit -m \"Update coverage badge in README\" || true",
     "release": "npm run build && GITHUB_TOKEN=$(grep GITHUB_TOKEN .env | cut -d '=' -f2) ./node_modules/.bin/release-it . ",
     "release:check": "npm run lint:check && npm run build && GITHUB_TOKEN=$(grep GITHUB_TOKEN .env | cut -d '=' -f2) ./node_modules/.bin/release-it . --dry-run",
-    "test": "c8 --include=src/**/*.js mocha 'test/index.js' 'test/cjs.test.cjs' -t 15000",
-    "test:esm": "c8 --include=src/**/*.js mocha test/index.js -t 15000",
-    "test:cjs": "c8 --include=src/**/*.js mocha test/cjs.test.cjs -t 15000",
+    "test": "c8 mocha 'test/index.js' 'test/cjs.test.cjs' -t 15000",
+    "test:esm": "c8 mocha test/index.js -t 15000",
+    "test:cjs": "c8 mocha test/cjs.test.cjs -t 15000",
     "test:debug": "DEBUG=metalsmith-blog-list:* npm test",
     "test:e2e": "serve -l 3000 test/fixtures",
     "depcheck": "depcheck"
