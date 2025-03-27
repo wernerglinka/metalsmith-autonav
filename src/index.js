@@ -304,14 +304,38 @@ function buildNavTree(files, options, debug) {
  * @param {Function} debug - Debug function
  */
 function addToTree(tree, segments, navItem, filePath, options, dirNodes, debug) {
-  // For index files, add to parent level
-  if (segments.length === 0 || filePath.endsWith('index.html') || filePath.endsWith('index.md')) {
+  // For index files at root level, add to parent level
+  if (segments.length === 0 && (filePath === 'index.html' || filePath === 'index.md')) {
     Object.keys(navItem).forEach(key => {
       if (key !== 'children') {
         tree[key] = navItem[key];
       }
     });
     return;
+  }
+  
+  // For other files at root level, add to children
+  if (segments.length === 0) {
+    // Get the filename without extension to use as the key
+    const fileKey = navItem.title.toLowerCase().replace(/\s+/g, '-');
+    tree.children[fileKey] = navItem;
+    return;
+  }
+  
+  // For nested index files, add to parent directory node
+  if (filePath.endsWith('index.html') || filePath.endsWith('index.md')) {
+    // Get the directory path
+    const dirPath = segments.join('/');
+    const dirNode = dirNodes.get(dirPath);
+    
+    if (dirNode) {
+      Object.keys(navItem).forEach(key => {
+        if (key !== 'children') {
+          dirNode[key] = navItem[key];
+        }
+      });
+      return;
+    }
   }
   
   // For nested files, traverse or create path

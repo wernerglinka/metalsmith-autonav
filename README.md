@@ -30,7 +30,7 @@ npm install metalsmith-autonav
 
 This plugin follows the standard Metalsmith plugin pattern and can be used both with ESM and CommonJS.
 
-> **IMPORTANT**: This plugin must be used **after** the layouts plugin in your Metalsmith build chain. At this point, all your content files will have been transformed to `.html` files, which the autonav plugin expects.
+> **IMPORTANT**: This plugin must be used **before** the layouts plugin in your Metalsmith build chain. At this point, all your content files will have been transformed to `.html` files, which the autonav plugin expects.
 
 ### ESM (preferred)
 
@@ -42,13 +42,13 @@ import autonav from 'metalsmith-autonav';
 
 metalsmith(__dirname)
   .use(markdown()) // Convert Markdown to HTML
-  .use(layouts()) // Apply layouts
   .use(autonav({  // Then generate navigation AFTER layouts
     // options go here
     navKey: 'navigation',
     breadcrumbKey: 'breadcrumbs',
     navLabelKey: 'navLabel'
   }))
+  .use(layouts()) // Apply layouts
   .build((err) => {
     if (err) throw err;
     console.log('Build complete!');
@@ -65,13 +65,13 @@ const autonav = require('metalsmith-autonav');
 
 metalsmith(__dirname)
   .use(markdown()) // Convert Markdown to HTML
-  .use(layouts()) // Apply layouts
   .use(autonav({  // Then generate navigation AFTER layouts
     // options go here
     navKey: 'navigation',
     breadcrumbKey: 'breadcrumbs',
     navLabelKey: 'navLabel'
   }))
+  .use(layouts()) // Apply layouts
   .build((err) => {
     if (err) throw err;
     console.log('Build complete!');
