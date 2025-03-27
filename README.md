@@ -82,12 +82,21 @@ metalsmith(__dirname)
 
 The plugin scans all files and generates:
 
-1. A hierarchical navigation tree in metalsmith metadata
+1. A flat navigation structure with all root pages as siblings
 2. Breadcrumb paths in each file's metadata
 
 ### Navigation Structure
 
-The navigation structure reflects the filesystem hierarchy, with files becoming leaf nodes.
+The navigation structure features a completely flat organization at the root level, where all pages (including index/home) are siblings. Each page can have its own children, maintaining a hierarchical structure for nested content.
+
+Each navigation item contains only the essential properties:
+
+- `title` - The display name for the navigation item
+- `path` - The URL path (following the usePermalinks option setting)
+- `children` - An object containing any child pages (empty object if none exist)
+- `index` - (Optional) Only present if a page has a navIndex value set
+
+Unlike many traditional navigation plugins, this plugin intentionally keeps the home/index page as a sibling to other pages rather than a parent, making it easier to iterate through all pages at the same level.
 
 For example, with this file structure:
 
@@ -108,39 +117,39 @@ The generated navigation object would look like:
 
 ```javascript
 {
-  title: "Home",
-  path: "/",
-  children: {
-    "about": {
-      title: "About",
-      path: "/about.html",
-      children: {}
-    },
-    "blog": {
-      title: "Blog",
-      path: "/blog/",
-      children: {
-        "post1": {
-          title: "Post 1",
-          path: "/blog/post1.html",
-          children: {}
-        },
-        "post2": {
-          title: "Post 2",
-          path: "/blog/post2.html",
-          children: {}
-        }
+  "home": {
+    "title": "Home",
+    "path": "/"
+  },
+  "about": {
+    "title": "About",
+    "path": "/about/",
+    "children": {}
+  },
+  "blog": {
+    "title": "Blog",
+    "path": "/blog/",
+    "children": {
+      "post1": {
+        "title": "Post 1",
+        "path": "/blog/post1/",
+        "children": {}
+      },
+      "post2": {
+        "title": "Post 2",
+        "path": "/blog/post2/",
+        "children": {}
       }
-    },
-    "products": {
-      title: "Products",
-      path: "/products/",
-      children: {
-        "product1": {
-          title: "Product 1",
-          path: "/products/product1.html",
-          children: {}
-        }
+    }
+  },
+  "products": {
+    "title": "Products",
+    "path": "/products/",
+    "children": {
+      "product1": {
+        "title": "Product 1",
+        "path": "/products/product1/",
+        "children": {}
       }
     }
   }
@@ -157,11 +166,38 @@ For example, the file `products/product1.md` would have a breadcrumb like:
 [
   { title: "Home", path: "/" },
   { title: "Products", path: "/products/" },
+  { title: "Product 1", path: "/products/product1/" }  // With usePermalinks: true (default)
+]
+```
+
+With `usePermalinks: false`, the paths would include the .html extension:
+
+```javascript
+[
+  { title: "Home", path: "/index.html" },
+  { title: "Products", path: "/products/index.html" },
   { title: "Product 1", path: "/products/product1.html" }
 ]
 ```
 
+Example of using breadcrumbs in your templates:
+
+```handlebars
+<!-- Display breadcrumbs -->
+<nav aria-label="Breadcrumb">
+  <ol class="breadcrumbs">
+    {{#each breadcrumb}}
+      <li {{#if @last}}aria-current="page"{{/if}}>
+        <a href="{{this.path}}">{{this.title}}</a>
+      </li>
+    {{/each}}
+  </ol>
+</nav>
+```
+
 ## Options
+
+> **Note:** The navigation structure is intentionally flat at the root level with the home page (index.html) being a sibling to other pages rather than a parent. This makes it easier to iterate through all pages at the same level using a standard `{{#each}}` loop in your templates.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -390,25 +426,42 @@ Then in your templates, access each navigation structure separately:
 ```handlebars
 <!-- Main navigation in header -->
 <nav class="main-nav">
-  {{#each metadata.mainNav.children}}
-    <a href="{{this.path}}">{{this.title}}</a>
+  {{#each metadata.mainNav as |item key|}}
+    {{#if (ne key "home")}} <!-- Skip home in the menu if desired -->
+      <a href="{{item.path}}">{{item.title}}</a>
+      
+      <!-- Display children if any -->
+      {{#if item.children}}
+        <ul class="submenu">
+          {{#each item.children as |child childKey|}}
+            <li><a href="{{child.path}}">{{child.title}}</a></li>
+          {{/each}}
+        </ul>
+      {{/if}}
+    {{/if}}
   {{/each}}
 </nav>
 
 <!-- Sidebar navigation -->
 <nav class="side-nav">
-  {{#each metadata.sideNav.children}}
-    <a href="{{this.path}}">{{this.title}}</a>
+  {{#each metadata.sideNav as |item key|}}
+    {{#if (ne key "home")}} <!-- Skip home in the menu if desired -->
+      <a href="{{item.path}}">{{item.title}}</a>
+    {{/if}}
   {{/each}}
 </nav>
 
 <!-- Footer navigation -->
 <nav class="footer-nav">
-  {{#each metadata.footerNav.children}}
-    <a href="{{this.path}}">{{this.title}}</a>
+  {{#each metadata.footerNav as |item key|}}
+    {{#if (ne key "home")}} <!-- Skip home in the menu if desired -->
+      <a href="{{item.path}}">{{item.title}}</a>
+    {{/if}}
   {{/each}}
 </nav>
 ```
+
+Note the use of `{{#each metadata.mainNav as |item key|}}` which iterates over the flat structure of pages at the root level. The `key` is the page identifier (e.g., "home", "about", "blog") and `item` is the navigation object with its properties.
 
 ## Test Coverage
 

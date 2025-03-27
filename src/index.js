@@ -3,7 +3,7 @@
 /**
  * @typedef {Object} NavOptions
  * @property {string} [navKey='nav'] - Key in metalsmith metadata for the navigation object
- * @property {string|Function} [navLabel='title'] - File property that defines a page's title in navigation, or a function that returns the label
+ * @property {string|Function} [navLabelKey='navLabel'] - Frontmatter property to override the default filename-based label, or a function for custom labels
  * @property {string} [navIndexKey='navIndex'] - File property that defines a page's position in navigation
  * @property {boolean} [navExcludeKey='navExclude'] - File property to exclude a page from navigation
  * @property {string} [breadcrumbKey='breadcrumb'] - Key in file metadata for the breadcrumb path array
