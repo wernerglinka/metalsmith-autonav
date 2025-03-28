@@ -1,5 +1,7 @@
 ---
 customTitle: Custom Home
+navigation:
+  navIndex: 0
 ---
 
 # Home Page with Custom Options

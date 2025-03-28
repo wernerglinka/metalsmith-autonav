@@ -1,6 +1,7 @@
 ---
 title: Products
-navIndex: 3
+navigation:
+  navIndex: 3
 ---
 
 # Products

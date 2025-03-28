@@ -1,5 +1,7 @@
 ---
 title: Test Page
+navigation:
+  navIndex: 4
 ---
 
 # Test Page

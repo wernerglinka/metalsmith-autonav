@@ -1,6 +1,7 @@
 ---
 title: About Page
-navIndex: 1
+navigation:
+  navIndex: 1
 ---
 
 # About Page

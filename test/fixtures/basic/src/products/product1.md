@@ -1,5 +1,7 @@
 ---
 title: Product One
+navigation:
+  navIndex: 1
 ---
 
 # Product One

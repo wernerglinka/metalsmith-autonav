@@ -1,6 +1,7 @@
 ---
 title: Private Page
-navExclude: true
+navigation:
+  navExclude: true
 ---
 
 # Private Page

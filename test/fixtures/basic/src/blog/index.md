@@ -1,6 +1,7 @@
 ---
 title: Blog
-navIndex: 2
+navigation:
+  navIndex: 2
 ---
 
 # Blog

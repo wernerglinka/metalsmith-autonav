@@ -1,5 +1,7 @@
 ---
 title: Home Page
+navigation:
+  navIndex: 0
 ---
 
 # Home Page
