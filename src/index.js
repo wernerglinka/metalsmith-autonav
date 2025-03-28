@@ -128,10 +128,21 @@ function autonav(options = {}) {
       try {
         // Handle multiple configurations if provided
         if (options.configs && typeof options.configs === 'object') {
+          // Check if 'main' config exists (case-insensitive) since we need it for section menus
+          const hasMainConfig = Object.keys(options.configs).some(key => key.toLowerCase() === 'main');
+          
+          // If there's no 'main' config but there are section menus, use the first config instead
+          let mainConfigName = hasMainConfig ? 
+            Object.keys(options.configs).find(key => key.toLowerCase() === 'main') :
+            Object.keys(options.configs)[0];
+            
+          debug('Will use config "%s" for section menus', mainConfigName);
+          
           debug('Multiple navigation configurations detected: %O', Object.keys(options.configs));
           
           // Process each navigation configuration
           for (const configName of Object.keys(options.configs)) {
+            debug('Processing config: %s', configName);
             const configOpts = {
               ...defaultOpts,
               ...options.options, // Global options if provided
@@ -146,9 +157,142 @@ function autonav(options = {}) {
             // Add to metalsmith metadata
             metalsmith.metadata()[configOpts.navKey] = navTree;
             debug('Added navigation tree for "%s" to metalsmith metadata key: %s', configName, configOpts.navKey);
+          
+          // Note structure of main navigation if debugging enabled
+          if (configName.toLowerCase() === 'main') {
+            debug('Main nav tree structure: %s', 
+              Object.keys(navTree).map(key => `${key} (${navTree[key].path})`).join(', '));
+          }
             
             // Generate breadcrumbs for this config
             generateBreadcrumbs(files, navTree, configOpts, debug);
+            
+            // Generate section-specific menus from this navigation tree
+            // We'll use either the 'main' config or the first config if 'main' doesn't exist
+            if ((configName.toLowerCase() === 'main' || configName === mainConfigName) && 
+                options.sectionMenus && typeof options.sectionMenus === 'object') {
+              // Debug section menus processing
+              debug('Generating section-specific menus for config "%s"', configName);
+              
+              // Debug section menu generation
+              debug('Generating section menus with paths: %s', Object.keys(options.sectionMenus).join(', '));
+              debug('Looking for sections in nav tree with keys: %s', Object.keys(navTree).join(', '));
+              
+              // Create section menus using this navigation tree
+              for (const [sectionPath, menuKey] of Object.entries(options.sectionMenus)) {
+                debug('Creating section menu for %s as %s from %s navigation', sectionPath, menuKey, configName);
+                
+                // Find the section in the nav tree
+                let sectionNode = null;
+                
+                // Handle root sections (simple string match at top level)
+                if (sectionPath === '/') {
+                  sectionNode = navTree;
+                } else {
+                  // Normalize the section path to ensure it starts and ends with /
+                  const normalizedSectionPath = 
+                    sectionPath.startsWith('/') ? sectionPath : `/${sectionPath}`;
+                  
+                  // First try to find a direct match in the tree (faster)
+                  // Since our tree is now flat at the top level for common sections
+                  debug('Looking for section path: %s', normalizedSectionPath);
+                  
+                  // A special check for common naming patterns
+                  const sectionKey = sectionPath.replace(/^\/|\/$/g, '');
+                  debug('Extracted section key: %s', sectionKey);
+                  
+                  // First try finding by key directly
+                  if (navTree[sectionKey]) {
+                    debug('Found section by key: %s', sectionKey);
+                    sectionNode = navTree[sectionKey];
+                  } else {
+                    // Try finding by path
+                    for (const key in navTree) {
+                      debug('Comparing with node "%s" path: %s', key, navTree[key].path);
+                      
+                      if (navTree[key].path === normalizedSectionPath) {
+                        debug('Match found for path %s in node %s', normalizedSectionPath, key);
+                        sectionNode = navTree[key];
+                        break;
+                      }
+                    }
+                  }
+                  
+                  // If not found directly, search more thoroughly
+                  if (!sectionNode) {
+                    // Use find function to navigate the tree (simpler than recursion here)
+                    const findSection = (tree, path) => {
+                      for (const key in tree) {
+                        const item = tree[key];
+                        
+                        // If this item's path matches the section path
+                        if (item.path === normalizedSectionPath || 
+                            (normalizedSectionPath.endsWith('/') && 
+                             item.path === normalizedSectionPath.slice(0, -1))) {
+                          return item;
+                        }
+                        
+                        // Check children
+                        if (item.children && Object.keys(item.children).length > 0) {
+                          const found = findSection(item.children, path);
+                          if (found) {
+                            return found;
+                          }
+                        }
+                      }
+                      return null;
+                    };
+                    
+                    sectionNode = findSection(navTree, normalizedSectionPath);
+                  }
+                }
+                
+                // If section found, add its children as a new nav tree
+                if (sectionNode) {
+                  debug('Found section %s for menu %s', sectionPath, menuKey);
+                  
+                  if (sectionPath === '/') {
+                    // For root, use the entire tree
+                    metalsmith.metadata()[menuKey] = navTree;
+                    debug('Created root menu %s with %d items', menuKey, Object.keys(navTree).length);
+                  } else if (sectionNode.children) {
+                    // For section paths like /blog/ etc., need to create a proper section menu
+                    // First find the section key from the path (e.g., 'blog' from '/blog/')
+                    const sectionKey = sectionPath.replace(/^\/|\/$/g, '');
+                    
+                    // Create a menu containing the section's children
+                    // The key change is that we're just passing the children directly,
+                    // rather than creating a new empty object
+                    const sectionMenu = sectionNode.children;
+                    
+                    debug('Created section menu %s with %d items - keys: %s', 
+                      menuKey, 
+                      Object.keys(sectionMenu).length,
+                      Object.keys(sectionMenu).join(', '));
+                    
+                    metalsmith.metadata()[menuKey] = sectionMenu;
+                    
+                    // Additional debugging for section menus if needed
+                    if (menuKey.includes('Menu')) {
+                      debug('Created %s with %d items: %s', 
+                        menuKey, 
+                        Object.keys(sectionMenu).length,
+                        Object.keys(sectionMenu).join(', '));
+                    }
+                  } else {
+                    debug('Found section %s but it has no children', sectionPath);
+                  }
+                  
+                  debug('Created section menu %s with %d items', 
+                       menuKey, 
+                       sectionNode.children ? Object.keys(sectionNode.children).length : 0);
+                } else {
+                  debug('WARNING: Section %s not found for menu %s', sectionPath, menuKey);
+                  debug('Available paths: %s', 
+                    Object.keys(navTree).map(key => `${key}: ${navTree[key].path}`).join(', '));
+                }
+              }
+            }
           }
         } else {
           // Single navigation configuration
@@ -166,11 +310,14 @@ function autonav(options = {}) {
           generateBreadcrumbs(files, navTree, opts, debug);
           
           // Generate section-specific menus if configured
-          if (opts.sectionMenus && typeof opts.sectionMenus === 'object') {
-            debug('Generating section-specific menus');
+          // Handle sectionMenus for both global config (opts.sectionMenus) and top-level config (options.sectionMenus)
+          // This gives flexibility for how the sectionMenus can be specified
+          const sectionMenusConfig = opts.sectionMenus || options.sectionMenus;
+          if (sectionMenusConfig && typeof sectionMenusConfig === 'object') {
+            debug('Generating section-specific menus for single configuration with config: %O', sectionMenusConfig);
             
             // Create section menus
-            for (const [sectionPath, menuKey] of Object.entries(opts.sectionMenus)) {
+            for (const [sectionPath, menuKey] of Object.entries(sectionMenusConfig)) {
               debug('Creating section menu for %s as %s', sectionPath, menuKey);
               
               // Find the section in the nav tree
@@ -201,9 +348,12 @@ function autonav(options = {}) {
                       const item = tree[key];
                       
                       // If this item's path matches the section path
+                      debug('Deep search - Comparing %s with %s', item.path, normalizedSectionPath);
+                      
                       if (item.path === normalizedSectionPath || 
                           (normalizedSectionPath.endsWith('/') && 
                            item.path === normalizedSectionPath.slice(0, -1))) {
+                        debug('Deep match found for %s', normalizedSectionPath);
                         return item;
                       }
                       

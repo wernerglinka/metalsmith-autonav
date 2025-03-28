@@ -12,7 +12,7 @@ Metalsmith plugin that automatically generates navigation trees and breadcrumb p
 
 - Automatically generates hierarchical navigation from file structure
 - Adds breadcrumb paths to each file
-- Provides normalized paths for client-side active page detection
+- Supports active page and active trail detection
 - Creates section-specific navigation menus automatically
 - Organizes navigation metadata in a clean, nested structure
 - Intelligent duplicate detection and prevention for clean navigation trees
@@ -99,11 +99,11 @@ navigation:
 ---
 ```
 
-These keys control navigation behavior:
+These properties control navigation behavior:
 
-- `navigation.navLabel` - Override the default filename-based label
-- `navigation.navIndex` - Define a page's position in navigation
-- `navigation.navExclude` - Set to true to exclude a page from navigation
+- `navigation.navLabel` - Overwrites the file-name basednavigation label
+- `navigation.navIndex` - Defines a page's position in navigation
+- `navigation.navExclude` - Set to true to exclude the page from navigation
 - `navigation.path` - The normalized path used for client-side active page detection (added automatically)
 - `navigation.breadcrumb` - Where the breadcrumb path array is stored (added automatically)
 
@@ -117,8 +117,6 @@ Each navigation item contains these properties:
 - `path` - The URL path (following the usePermalinks option setting)
 - `children` - An object containing any child pages (empty object if none exist)
 - `index` - (Optional) Only present if a page has a navIndex value set
-- `isActive` - (Only in navWithActiveTrail) Boolean indicating if this is the current active page
-- `isActiveTrail` - (Only in navWithActiveTrail) Boolean indicating if this is part of the active trail
 
 For example, with this file structure:
 
@@ -195,7 +193,7 @@ The normalized paths follow a consistent pattern that makes it easy to use for a
 
 Each file will have a breadcrumb array added to its metadata, showing the path from the home page to the current page.
 
-For example, the file `products/product1.html` would have a breadcrumb like:
+For example, the file `/products/product1.html` would have a breadcrumb like:
 
 ```javascript
 [
@@ -287,16 +285,22 @@ The plugin stores each page's path in the navigation metadata. This path can be 
 <!-- Main navigation with data attributes for client-side active state detection -->
 <nav>
   <ul class="main-nav">
-    {% for key, item in navigation %}
-      <li data-nav-path="{{ item.path }}">
-        <a href="{{ item.path }}">{{ item.title }}</a>
-        
-        <!-- Submenu -->
+    {% for key, item in nav %}
+      <li>
+        <a href="{{ item.path }}" 
+          {% if navigation and navigation.path and item.path and (item.path !== '/' and navigation.path.indexOf(item.path) === 0) or (item.path === '/' and navigation.path === '/') %}class="active"{% endif %}
+        >
+          {{ key }}
+        </a>
         {% if item.children | length > 0 %}
           <ul class="submenu">
             {% for childKey, child in item.children %}
-              <li data-nav-path="{{ child.path }}">
-                <a href="{{ child.path }}">{{ child.title }}</a>
+              <li>
+                <a href="{{ child.path }}" 
+                  {% if navigation and navigation.path and child.path and (child.path !== '/' and navigation.path.indexOf(child.path) === 0) or (child.path === '/' and navigation.path === '/') %}class="active"{% endif %}
+                >
+                  {{ childKey }}
+                </a>
               </li>
             {% endfor %}
           </ul>
@@ -307,28 +311,6 @@ The plugin stores each page's path in the navigation metadata. This path can be 
 </nav>
 ```
 
-Then in your client-side JavaScript:
-
-```javascript
-// Get the current path
-const currentPath = window.location.pathname;
-
-// Mark the active navigation item
-document.querySelectorAll('[data-nav-path]').forEach(item => {
-  const navPath = item.getAttribute('data-nav-path');
-  
-  // Exact match for current page
-  if (navPath === currentPath) {
-    item.classList.add('active');
-  }
-  
-  // Parent/ancestor match for active trail
-  if (currentPath.startsWith(navPath) && navPath !== '/') {
-    item.classList.add('active-trail');
-  }
-});
-```
-
 ### Section-Specific Menus
 
 The plugin can automatically create section-specific menus by extracting portions of the main navigation tree. This is useful for showing relevant sub-navigation in different parts of your site.
@@ -336,6 +318,7 @@ The plugin can automatically create section-specific menus by extracting portion
 Configure section menus using the `sectionMenus` option:
 
 ```javascript
+// With single navigation configuration
 metalsmith.use(autonav({
   // Main navigation settings
   navKey: 'mainNav',
@@ -347,7 +330,35 @@ metalsmith.use(autonav({
     '/': 'topMenu'            // Creates a topMenu from the root level
   }
 }));
+
+// With multiple navigation configurations
+metalsmith.use(autonav({
+  // Global options
+  options: {
+    navHomePage: true
+  },
+  
+  // Section-specific menus (global - uses the 'main' configuration)
+  sectionMenus: {
+    '/blog/': 'blogMenu',      // Creates a blogMenu from blog section
+    '/products/': 'productNav' // Creates a productNav from products section
+  },
+  
+  // Multiple named configurations
+  configs: {
+    main: {
+      navKey: 'nav',          // Primary navigation
+      breadcrumbKey: 'breadcrumb'
+    },
+    footer: {
+      navKey: 'footerNav',    // Footer navigation 
+      navExcludeKey: 'footerExclude'
+    }
+  }
+}));
 ```
+
+When using multiple navigation configurations, the section menus are created based on the `main` configuration's navigation tree (case-insensitive, so 'Main' or 'MAIN' will also work). If no configuration named 'main' exists, the plugin will use the first configuration for section menus.
 
 Then in your templates, you can use these section-specific menus:
 
@@ -628,6 +639,6 @@ MIT
 [metalsmith-url]: https://metalsmith.io
 [license-badge]: https://img.shields.io/github/license/wernerglinka/metalsmith-autonav
 [license-url]: LICENSE
-[coverage-badge]: https://img.shields.io/badge/test%20coverage-92%25-brightgreen
+[coverage-badge]: https://img.shields.io/badge/test%20coverage-88%25-green
 [coverage-url]: #test-coverage
 [modules-badge]: https://img.shields.io/badge/modules-ESM%2FCJS-blue
