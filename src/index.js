@@ -430,11 +430,15 @@ function buildNavTree(files, options, debug) {
           const parentDir = pathParts[0]; // e.g., "blog"
           const fileName = pathParts[pathParts.length-1].replace(/\.(md|html)$/, ''); // e.g., "post1"
           
+          // Check if the filename starts with the parent directory name
+          // If so, it might be a problematic path like blog/blogpost-1
+          const fixedFileName = fileName.startsWith(parentDir) ? fileName.slice(parentDir.length) : fileName;
+          
           // Make sure the URL starts with parent directory
           if (options.usePermalinks) {
-            urlPath = `/${parentDir}/${fileName}/`;
+            urlPath = `/${parentDir}/${fixedFileName}/`;
           } else {
-            urlPath = `/${parentDir}/${fileName}.html`;
+            urlPath = `/${parentDir}/${fixedFileName}.html`;
           }
         }
       }
@@ -520,11 +524,74 @@ function cleanupTree(tree) {
     collectPaths(node);
   });
   
-  // Step 2: Handle duplicates - keep only the nodes with well-formed paths
+  // Step 2: Fix malformed paths and detect patterns like "/blogblogpost-1/"
+  // before we do deeper duplicate removal
+  const fixMalformedPaths = (node) => {
+    if (!node || !node.children) return;
+    
+    // Process each child
+    Object.keys(node.children).forEach(childKey => {
+      const childNode = node.children[childKey];
+      if (!childNode || !childNode.path) return;
+      
+      // Check for patterns like "/blogblogpost-1/" or similar malformed paths
+      const pathParts = childNode.path.split('/').filter(Boolean);
+      
+      // Test for directory name repeated in path (e.g., "blogblogpost-1")
+      // This is a common malformed pattern we want to fix
+      if (pathParts.length >= 1) {
+        const firstPart = pathParts[0];
+        
+        if (pathParts.length >= 2) {
+          const secondPart = pathParts[1];
+          
+          // Check if the second part starts with the first part (e.g., "blogblogpost-1")
+          if (secondPart && secondPart.startsWith(firstPart) && secondPart !== firstPart) {
+            // This is a malformed path - fix it by reconstructing the path correctly
+            const goodPath = `/${firstPart}/${secondPart.slice(firstPart.length)}/`;
+            childNode.path = goodPath;
+          }
+        }
+      }
+      
+      // Process this node's children recursively
+      fixMalformedPaths(childNode);
+    });
+  };
+  
+  // Apply fix for malformed paths first
+  fixMalformedPaths({ children: tree });
+  
+  // Step 3: Handle duplicates and self-references in the tree
   const removeDuplicates = (node) => {
     if (!node.children) return;
     
-    // Check each child
+    // Check for pattern where an item has itself as a child with a different path
+    // This applies to any path, not just blog posts
+    Object.keys(node.children).forEach(childKey => {
+      const childNode = node.children[childKey];
+      
+      if (childNode.children) {
+        // Look for grandchildren with the same key as their parent
+        Object.keys(childNode.children).forEach(grandchildKey => {
+          if (grandchildKey === childKey) {
+            // This is our duplicate pattern! Remove the nested node and keep just the parent
+            // But first, use the most correct path (usually the grandchild's)
+            const grandchildNode = childNode.children[grandchildKey];
+            if (grandchildNode && grandchildNode.path) {
+              // Use the more specific path if it's available
+              if (grandchildNode.path.split('/').length > childNode.path.split('/').length) {
+                childNode.path = grandchildNode.path;
+              }
+            }
+            // Now remove the duplicate grandchild
+            delete childNode.children[grandchildKey];
+          }
+        });
+      }
+    });
+    
+    // Now continue with standard duplicate checks
     Object.keys(node.children).forEach(childKey => {
       const childNode = node.children[childKey];
       
@@ -540,7 +607,7 @@ function cleanupTree(tree) {
         // Check if the path has nested duplication
         const pathParts = childNode.path.split('/').filter(Boolean);
         
-        // Check for doubled path segments (e.g., /blogblogpost-1/)
+        // Check for doubled path segments (e.g., /blog/blog/)
         let hasDoubledSegment = false;
         for (let i = 0; i < pathParts.length - 1; i++) {
           if (pathParts[i] === pathParts[i+1]) {
@@ -560,35 +627,31 @@ function cleanupTree(tree) {
       if (childNode.children) {
         removeDuplicates(childNode);
         
-        // Special check: if a child node has a child with the same name as itself,
-        // and the grandchild has children with no duplication issues itself,
-        // move the grandchild's content up and remove the grandchild
+        // Check for case where a node has a child with the same key as itself
         Object.keys(childNode.children).forEach(grandchildKey => {
           const grandchildNode = childNode.children[grandchildKey];
           
           // If grandchild has the same key as the child but is a different node
-          if (grandchildKey === childKey && grandchildNode.path !== childNode.path) {
-            // Check which path is better formed
-            if (grandchildNode.path.includes('//') || 
-                // Detect doubled segments (like /blog/blog/) in path
-                grandchildNode.path.split('/').filter(Boolean).some((segment, i, arr) => 
-                  i > 0 && segment === arr[i-1])) {
-              // Grandchild has malformed path - delete it
-              delete childNode.children[grandchildKey];
-            } else if (childNode.path.includes('//') ||
-                       // Detect doubled segments in child path
-                       childNode.path.split('/').filter(Boolean).some((segment, i, arr) => 
-                         i > 0 && segment === arr[i-1])) {
-              // Child has malformed path but grandchild is good - make grandchild replace child
+          if (grandchildKey === childKey) {
+            // We found a blog post that appears to be its own child
+            // Keep only the child with the more correct path
+            
+            // For paths like "/blogblogpost-1/" vs "/blog/blogpost-1/", 
+            // the one with the "/" after the directory name is usually correct
+            const childParts = childNode.path.split('/');
+            const grandchildParts = grandchildNode.path.split('/');
+            
+            // Usually the path with more segments is the correct one
+            if (grandchildParts.length > childParts.length) {
+              // The grandchild has a more specific path - use it and remove the duplicate
               Object.assign(childNode, {
                 path: grandchildNode.path,
-                title: grandchildNode.title,
-                // Keep child's children but add grandchild's children
-                children: { ...childNode.children }
+                title: grandchildNode.title
               });
-              // Remove the grandchild since we've moved its content up
-              delete childNode.children[grandchildKey];
             }
+            
+            // Always remove the grandchild to avoid the self-referencing loop
+            delete childNode.children[grandchildKey];
           }
         });
       }

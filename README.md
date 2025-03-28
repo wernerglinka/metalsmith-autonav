@@ -15,6 +15,8 @@ Metalsmith plugin that automatically generates navigation trees and breadcrumb p
 - Provides path-based active page detection with active trail highlighting
 - Creates section-specific navigation menus automatically
 - Organizes navigation metadata in a clean, nested structure
+- Intelligent duplicate detection and prevention for clean navigation trees
+- Accurate path normalization for nested files to prevent malformed paths
 - Sorts navigation items based on custom properties
 - Multiple navigation configurations in a single pass (e.g., header, footer, sidebar)
 - Smart handling of directory nodes in navigation
@@ -434,6 +436,21 @@ metalsmith.use(autonav({
 }));
 ```
 
+### Duplicate Prevention and Path Normalization
+
+The plugin includes advanced handling of navigation paths to prevent common issues:
+
+1. **Duplicate Detection**: The plugin's intelligent cleanup process prevents:
+   - Pages appearing as their own children
+   - Nested duplicates from folder/index.md files
+   - Malformed paths with doubled directory names
+
+2. **Path Normalization**: Especially for nested content, paths are properly normalized:
+   - Blog posts: `/blog/post1/` instead of incorrectly formed paths like `/blogpost1/`
+   - Products: `/products/product1/` instead of `/productsproduct1/`
+
+This ensures your navigation is always clean, consistent, and correctly structured.
+
 ### Permalinks Configuration
 
 When working with or without permalinks:
@@ -602,6 +619,6 @@ MIT
 [metalsmith-url]: https://metalsmith.io
 [license-badge]: https://img.shields.io/github/license/wernerglinka/metalsmith-autonav
 [license-url]: LICENSE
-[coverage-badge]: https://img.shields.io/badge/test%20coverage-92%25-brightgreen
+[coverage-badge]: https://img.shields.io/badge/test%20coverage-91%25-brightgreen
 [coverage-url]: #test-coverage
 [modules-badge]: https://img.shields.io/badge/modules-ESM%2FCJS-blue
