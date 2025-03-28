@@ -110,12 +110,14 @@ These keys control navigation behavior:
 
 The navigation structure features a simple flat organization at the top level. Each page may have its own children, maintaining a hierarchical structure for nested content.
 
-Each navigation item contains only the essential properties:
+Each navigation item contains these properties:
 
 - `title` - The display name for the navigation item
 - `path` - The URL path (following the usePermalinks option setting)
 - `children` - An object containing any child pages (empty object if none exist)
 - `index` - (Optional) Only present if a page has a navIndex value set
+- `isActive` - (Only in navWithActiveTrail) Boolean indicating if this is the current active page
+- `isActiveTrail` - (Only in navWithActiveTrail) Boolean indicating if this is part of the active trail
 
 For example, with this file structure:
 
@@ -173,6 +175,30 @@ The generated navigation object would look like:
       }
     }
   }
+}
+```
+
+With active path highlighting enabled, a navigation item for the current page (e.g., `/blog/post1/`) would include these additional properties:
+
+```javascript
+{
+  "title": "Post 1",
+  "path": "/blog/post1/", 
+  "children": {},
+  "isActive": true,
+  "activeClass": "active"
+}
+```
+
+And its parent would include:
+
+```javascript
+{
+  "title": "Blog",
+  "path": "/blog/",
+  "children": { /* ... */ },
+  "isActiveTrail": true,
+  "activeTrailClass": "active-trail"
 }
 ```
 
@@ -576,6 +602,6 @@ MIT
 [metalsmith-url]: https://metalsmith.io
 [license-badge]: https://img.shields.io/github/license/wernerglinka/metalsmith-autonav
 [license-url]: LICENSE
-[coverage-badge]: https://img.shields.io/badge/test%20coverage-95%25-brightgreen
+[coverage-badge]: https://img.shields.io/badge/test%20coverage-96%25-brightgreen
 [coverage-url]: #test-coverage
 [modules-badge]: https://img.shields.io/badge/modules-ESM%2FCJS-blue

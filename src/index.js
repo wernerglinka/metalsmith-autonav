@@ -385,14 +385,6 @@ function buildNavTree(files, options, debug) {
       children: {}
     };
     
-    // Mark actual files vs directory nodes
-    navItem.isFile = true;
-    
-    // Mark index files specifically
-    if (filePath.endsWith('index.html') || filePath.endsWith('index.md')) {
-      navItem.isIndexFile = true;
-    }
-    
     // Only add index if it exists (for sorting)
     if (navIndex !== undefined && navIndex !== Infinity) {
       navItem.index = navIndex;
@@ -478,8 +470,7 @@ function addToTree(tree, segments, navItem, filePath, options) {
           node[parentSegment] = {
             title: parentSegment.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
             path: segmentPath,
-            children: {},
-            isDirectory: true
+            children: {}
           };
         }
         
@@ -490,8 +481,6 @@ function addToTree(tree, segments, navItem, filePath, options) {
         // Update with index file info
         node[parentSegment].title = navItem.title;
         node[parentSegment].path = navItem.path;
-        node[parentSegment].isIndexFile = true;
-        node[parentSegment].isDirectory = false;
         
         // Keep index property if provided
         if (navItem.index !== undefined) {
@@ -542,8 +531,7 @@ function addToTree(tree, segments, navItem, filePath, options) {
         node[parentKey] = {
           title: parentKey.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
           path: parentPath,
-          children: {},
-          isDirectory: true
+          children: {}
         };
       }
       
@@ -560,8 +548,7 @@ function addToTree(tree, segments, navItem, filePath, options) {
       node[key] = {
         title: key.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
         path: segmentPath,
-        children: {},
-        isDirectory: true
+        children: {}
       };
     }
     
@@ -598,13 +585,7 @@ function sortTree(tree, options) {
       const [, itemA] = a;
       const [, itemB] = b;
       
-      // Standard directory sorting - directories come first by default
-      if (itemA.isDirectory && !itemB.isDirectory) {
-        return -1;
-      }
-      if (!itemA.isDirectory && itemB.isDirectory) {
-        return 1;
-      }
+      // We no longer use isDirectory property, so sorting is purely by index or other properties
       
       // Otherwise, sort by the specified property or index
       const propName = options.sortBy || 'index';
@@ -638,9 +619,6 @@ function sortTree(tree, options) {
       
       // Apply the same sorting logic to children
       childrenArray.sort((a, b) => {
-        // If one item is a directory and one is a file, directories come first by default
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
         
         // Otherwise, sort by the specified property or index
         const propName = options.sortBy || 'index';
