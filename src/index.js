@@ -185,30 +185,42 @@ function autonav(options = {}) {
                 const normalizedSectionPath = 
                   sectionPath.startsWith('/') ? sectionPath : `/${sectionPath}`;
                 
-                // Use find function to navigate the tree (simpler than recursion here)
-                const findSection = (tree, path) => {
-                  for (const key in tree) {
-                    const item = tree[key];
-                    
-                    // If this item's path matches the section path
-                    if (item.path === normalizedSectionPath || 
-                        (normalizedSectionPath.endsWith('/') && 
-                         item.path === normalizedSectionPath.slice(0, -1))) {
-                      return item;
-                    }
-                    
-                    // Check children
-                    if (item.children && Object.keys(item.children).length > 0) {
-                      const found = findSection(item.children, path);
-                      if (found) {
-                        return found;
+                // First try to find a direct match in the tree (faster)
+                // Since our tree is now flat at the top level for common sections
+                for (const key in navTree) {
+                  if (navTree[key].path === normalizedSectionPath) {
+                    sectionNode = navTree[key];
+                    break;
+                  }
+                }
+                
+                // If not found directly, search more thoroughly
+                if (!sectionNode) {
+                  // Use find function to navigate the tree (simpler than recursion here)
+                  const findSection = (tree, path) => {
+                    for (const key in tree) {
+                      const item = tree[key];
+                      
+                      // If this item's path matches the section path
+                      if (item.path === normalizedSectionPath || 
+                          (normalizedSectionPath.endsWith('/') && 
+                           item.path === normalizedSectionPath.slice(0, -1))) {
+                        return item;
+                      }
+                      
+                      // Check children
+                      if (item.children && Object.keys(item.children).length > 0) {
+                        const found = findSection(item.children, path);
+                        if (found) {
+                          return found;
+                        }
                       }
                     }
-                  }
-                  return null;
-                };
-                
-                sectionNode = findSection(navTree, normalizedSectionPath);
+                    return null;
+                  };
+                  
+                  sectionNode = findSection(navTree, normalizedSectionPath);
+                }
               }
               
               // If section found, add its children as a new nav tree
@@ -217,8 +229,19 @@ function autonav(options = {}) {
                   // For root, use the entire tree
                   metalsmith.metadata()[menuKey] = navTree;
                 } else if (sectionNode.children) {
-                  // For other sections, use the children
-                  metalsmith.metadata()[menuKey] = sectionNode.children;
+                  // For section paths like /blog/ etc., need to create a proper section menu
+                  // First find the section key from the path (e.g., 'blog' from '/blog/')
+                  const sectionKey = sectionPath.replace(/^\/|\/$/g, '');
+                  
+                  // Create a menu containing both the section itself and its children
+                  const sectionMenu = {};
+                  
+                  // Add direct children to the menu
+                  for (const childKey in sectionNode.children) {
+                    sectionMenu[childKey] = sectionNode.children[childKey];
+                  }
+                  
+                  metalsmith.metadata()[menuKey] = sectionMenu;
                 }
                 debug('Created section menu %s with %d items', 
                      menuKey, 
@@ -266,11 +289,35 @@ function buildNavTree(files, options, debug) {
   
   debug('Building navigation tree from %d files', filePaths.length);
 
+  // Track index files separately to avoid duplicate entries
+  const indexFiles = {};
+  const regularFiles = {};
+  
+  // First pass - separate index files from regular files
+  filePaths.forEach(filePath => {
+    const isIndexFile = filePath.endsWith('index.md') || filePath.endsWith('index.html');
+    if (isIndexFile) {
+      const dirPath = filePath.replace(/index\.(md|html)$/, '');
+      indexFiles[dirPath] = filePath;
+    } else {
+      regularFiles[filePath] = true;
+    }
+  });
+
   // Sort files if needed
   if (options.sortBy) {
     filePaths.sort((a, b) => {
-      let valA = files[a][options.sortBy] !== undefined ? files[a][options.sortBy] : Infinity;
-      let valB = files[b][options.sortBy] !== undefined ? files[b][options.sortBy] : Infinity;
+      // First check for navigation.navIndex property
+      let aNav = files[a][options.navigationObjectKey];
+      let bNav = files[b][options.navigationObjectKey];
+      
+      let valA = (aNav && aNav[options.navIndexKey] !== undefined) ? 
+                  aNav[options.navIndexKey] : 
+                  (files[a][options.sortBy] !== undefined ? files[a][options.sortBy] : Infinity);
+                  
+      let valB = (bNav && bNav[options.navIndexKey] !== undefined) ? 
+                  bNav[options.navIndexKey] : 
+                  (files[b][options.sortBy] !== undefined ? files[b][options.sortBy] : Infinity);
       
       // For string comparisons
       if (typeof valA === 'string' && typeof valB === 'string') {
@@ -368,7 +415,23 @@ function buildNavTree(files, options, debug) {
         urlPath = filePath.replace(/index\.(md|html)$/, '');
       } else {
         // For other files, create pretty URL by removing extension and adding trailing slash
+        // Make sure to correctly handle the path for nested files
         urlPath = filePath.replace(/\.(md|html)$/, '/');
+        
+        // Ensure paths don't contain doubled directory names (blogblogpost-1)
+        // First normalize path separators
+        urlPath = urlPath.replace(/\\/g, '/');
+        
+        // Then look for doubled directory paths
+        const pathParts = urlPath.split('/');
+        for (let i = 0; i < pathParts.length - 1; i++) {
+          if (pathParts[i] === pathParts[i+1]) {
+            // Found a duplication, remove one instance
+            pathParts.splice(i, 1);
+            i--; // Adjust index since we removed an element
+          }
+        }
+        urlPath = pathParts.join('/');
       }
     } else {
       // For non-permalink style: /about.html
@@ -376,6 +439,9 @@ function buildNavTree(files, options, debug) {
     }
     
     // Normalize the path to ensure it starts with /
+    // Handle nested paths correctly by replacing backslashes with forward slashes
+    // (We already handle this for non-index files above, but need to do it for index files too)
+    urlPath = urlPath.replace(/\\/g, '/');
     const normalizedPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
     
     // Create navigation item with only essential properties
@@ -403,10 +469,54 @@ function buildNavTree(files, options, debug) {
     addToTree(tree, segments, navItem, filePath, options, debug);
   });
 
+  // Remove duplicate entries where pages are their own children
+  // This is a post-processing step to clean up the tree
+  cleanupTree(tree);
+  
   // Sort children in tree
   sortTree(tree, options);
 
   return tree;
+}
+
+/**
+ * Clean up the navigation tree to remove duplicates and invalid entries
+ * 
+ * @param {Object} tree - Navigation tree to clean up
+ */
+function cleanupTree(tree) {
+  for (const key in tree) {
+    const node = tree[key];
+    
+    // If this node has children that include itself (by matching path), remove it
+    if (node.children) {
+      Object.keys(node.children).forEach(childKey => {
+        const childNode = node.children[childKey];
+        
+        // Check if the child node has the same path as the parent - this is a duplicate
+        if (childNode.path === node.path) {
+          delete node.children[childKey];
+        }
+        
+        // If child node has children that include itself, remove the duplication there too
+        if (childNode.children) {
+          Object.keys(childNode.children).forEach(grandchildKey => {
+            const grandchildNode = childNode.children[grandchildKey];
+            
+            // If grandchild has the same path as child, it's a duplicate
+            if (grandchildNode.path === childNode.path) {
+              delete childNode.children[grandchildKey];
+            }
+            
+            // Clean up any deeper children to avoid excessive nesting
+            if (grandchildNode.children) {
+              cleanupTree(grandchildNode.children);
+            }
+          });
+        }
+      });
+    }
+  }
 }
 
 
@@ -463,6 +573,7 @@ function addToTree(tree, segments, navItem, filePath, options) {
     if (isIndexFile) {
       // For index files, update the parent node
       if (depth > 0) {
+        // Get the parent segment name (the directory that contains this index file)
         const parentSegment = pathSegments[depth - 1].replace(/\.(html|md)$/, '');
         
         // Get or create the parent node
@@ -515,7 +626,8 @@ function addToTree(tree, segments, navItem, filePath, options) {
         return node[key];
       } 
       
-      // Find or create the parent node
+      // For files in subdirectories (depth > 0):
+      // Find or create the parent directory node
       const parentKey = pathSegments[depth - 1].replace(/\.(html|md)$/, '');
       
       if (!node[parentKey]) {
@@ -535,8 +647,12 @@ function addToTree(tree, segments, navItem, filePath, options) {
         };
       }
       
-      // Add to parent's children
-      node[parentKey].children[key] = navItem;
+      // Add to parent's children, but make sure we're not duplicating
+      // Don't add if this key already exists at top level (which can happen with index.md files)
+      if (!node[parentKey].children[key]) {
+        node[parentKey].children[key] = navItem;
+      }
+      
       return node[parentKey].children[key];
     } 
     
@@ -619,8 +735,7 @@ function sortTree(tree, options) {
       
       // Apply the same sorting logic to children
       childrenArray.sort((a, b) => {
-        
-        // Otherwise, sort by the specified property or index
+        // Sort by the specified property or index
         const propName = options.sortBy || 'index';
         const valueA = a[propName] !== undefined ? a[propName] : Infinity;
         const valueB = b[propName] !== undefined ? b[propName] : Infinity;
@@ -630,7 +745,7 @@ function sortTree(tree, options) {
           return options.sortReverse ? valueB.localeCompare(valueA) : valueA.localeCompare(valueB);
         }
         
-        // For numeric comparisons
+        // For numeric comparisons (ensuring sortReverse is respected)
         return options.sortReverse ? valueB - valueA : valueA - valueB;
       });
       
