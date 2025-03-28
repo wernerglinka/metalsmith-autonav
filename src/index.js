@@ -116,8 +116,7 @@ function autonav(options = {}) {
     sortReverse: false,
     pathFilter: null,
     usePermalinks: true,
-    activeClass: 'active', // CSS class for active items
-    activeTrailClass: 'active-trail', // CSS class for parents of active items
+    // Removed activeClass and activeTrailClass options as they're not useful in static site context
     sectionMenus: null // Object mapping section paths to menu keys
   };
 
@@ -426,19 +425,18 @@ function buildNavTree(files, options, debug) {
         // If this is a file in a directory, split path correctly to rebuild it properly
         const pathParts = filePath.split('/');
         if (pathParts.length > 1) {
-          // This is a nested file - like blog/post1.md
+          // This is a nested file - like blog/blogpost-1.html
           const parentDir = pathParts[0]; // e.g., "blog"
-          const fileName = pathParts[pathParts.length-1].replace(/\.(md|html)$/, ''); // e.g., "post1"
+          const fileName = pathParts[pathParts.length-1].replace(/\.(md|html)$/, ''); // e.g., "blogpost-1"
           
-          // Check if the filename starts with the parent directory name
-          // If so, it might be a problematic path like blog/blogpost-1
-          const fixedFileName = fileName.startsWith(parentDir) ? fileName.slice(parentDir.length) : fileName;
+          // Ensure we preserve the exact original filename in the path
+          // This is important for matching filenames in the navigation structure
           
-          // Make sure the URL starts with parent directory
+          // Make sure the URL starts with parent directory and preserves the exact original filename
           if (options.usePermalinks) {
-            urlPath = `/${parentDir}/${fixedFileName}/`;
+            urlPath = `/${parentDir}/${fileName}/`;
           } else {
-            urlPath = `/${parentDir}/${fixedFileName}.html`;
+            urlPath = `/${parentDir}/${fileName}.html`;
           }
         }
       }
@@ -545,11 +543,37 @@ function cleanupTree(tree) {
         if (pathParts.length >= 2) {
           const secondPart = pathParts[1];
           
-          // Check if the second part starts with the first part (e.g., "blogblogpost-1")
-          if (secondPart && secondPart.startsWith(firstPart) && secondPart !== firstPart) {
-            // This is a malformed path - fix it by reconstructing the path correctly
-            const goodPath = `/${firstPart}/${secondPart.slice(firstPart.length)}/`;
-            childNode.path = goodPath;
+          // ONLY fix paths that are clearly malformed like "/blogblog/" or "/blogblog "
+          // We need to preserve valid filenames like "blogpost-1" that happen to start with the directory name
+          
+          // First, check for exact directory name duplication - this is the most obvious error case
+          // Example: "/blog/blog/" should be fixed to "/blog/"
+          if (secondPart === firstPart) {
+            childNode.path = `/${firstPart}/`;
+          }
+          // Next, check for directory name immediately followed by the same name - this is likely a path join error
+          // Example: "/blogblog/" should be fixed to "/blog/"
+          else if (secondPart === firstPart + firstPart) {
+            childNode.path = `/${firstPart}/`;
+          }
+          // For truly malformed paths with no separator - look for "/blogblogX" pattern
+          // Do NOT touch legitimate filenames like "blogpost-1" that start with directory name
+          else if (secondPart.startsWith(firstPart) && 
+                   // Only fix paths that don't have a legitimate separator after the firstPart
+                   // A legitimate separator would be: "-", "_", ".", or a digit
+                   !secondPart.substring(firstPart.length, firstPart.length + 1).match(/[-_.0-9]/)) {
+            
+            // Check if this actually looks like a doubled directory error and not a legitimate filename
+            // This is a heuristic - if we're just duplicating the directory with maybe a character or two,
+            // it's probably an error. If it's a substantial word after the prefix, it's probably intentional.
+            const remainder = secondPart.slice(firstPart.length);
+            if (remainder.length <= 2) {
+              // This is likely a path error - fix it
+              const goodPath = `/${firstPart}/${remainder}/`;
+              childNode.path = goodPath;
+            }
+            // Otherwise, leave it alone - it's likely a legitimate filename that happens to start with 
+            // the directory name, like "blog/blogpost-1.html"
           }
         }
       }
@@ -930,47 +954,8 @@ function sortTree(tree, options) {
 }
 
 
-/**
- * Mark active and active trail items in the navigation tree based on current path
- * 
- * @param {Object} navTree - Navigation tree to process
- * @param {string} currentPath - The current page path
- * @param {NavOptions} options - Navigation options
- * @returns {boolean} - True if this branch contains the active item
- */
-function markActiveTrail(navTree, currentPath, options) {
-  let hasActiveItem = false;
-  
-  // Process each item in this level of the tree
-  for (const key in navTree) {
-    const item = navTree[key];
-    
-    // Check if this is the active item
-    if (item.path === currentPath) {
-      item.isActive = true;
-      item.activeClass = options.activeClass;
-      hasActiveItem = true;
-    } else {
-      item.isActive = false;
-    }
-    
-    // Process children recursively if they exist
-    if (item.children && Object.keys(item.children).length > 0) {
-      // If any child is active, mark this as part of the active trail
-      const childHasActive = markActiveTrail(item.children, currentPath, options);
-      
-      if (childHasActive) {
-        item.isActiveTrail = true;
-        item.activeTrailClass = options.activeTrailClass;
-        hasActiveItem = true;
-      } else {
-        item.isActiveTrail = false;
-      }
-    }
-  }
-  
-  return hasActiveItem;
-}
+// The markActiveTrail function has been removed since it's not useful in a static site context
+// Active states must be determined at runtime in the browser, not during build time
 
 /**
  * Generate breadcrumbs for each file
@@ -1115,21 +1100,8 @@ function generateBreadcrumbs(files, navTree, options, debug) {
     file[options.breadcrumbKey] = breadcrumb;
     debug('Added breadcrumb to %s: %O', filePath, breadcrumb);
     
-    // Mark active path and active trail for this file's navigation
-    const currentPath = file[options.navigationObjectKey].path;
-    
-    // Only mark active trail if the file has a path
-    if (currentPath) {
-      // Note: We use a deep copy of the original navTree to avoid modifying it
-      const fileNavTree = JSON.parse(JSON.stringify(navTree));
-      
-      // Mark active and active-trail items
-      markActiveTrail(fileNavTree, currentPath, options);
-      
-      // Store the navigation tree with active trail markings
-      file[options.navigationObjectKey].navWithActiveTrail = fileNavTree;
-      debug('Added nav with active trail for %s', filePath);
-    }
+    // We don't add active trail information anymore as it's not useful in a static site context
+    // Active states must be determined at runtime in the browser, not during build time
   });
 }
 

@@ -1657,19 +1657,27 @@ describe('metalsmith-autonav (ESM)', function() {
           title: 'Blog',
           contents: Buffer.from('# Blog')
         },
-        'blog/blog-intro.md': {  // Name starts with directory name
+        'blog/blog-intro.html': {  // HTML file in blog directory with prefix "blog-"
           title: 'Blog Introduction',
           contents: Buffer.from('# Blog Introduction')
         },
-        'products/product-list.md': {
+        'blog/blogpost-1.html': {  // HTML file in blog directory that starts with "blog" but isn't prefixed
+          title: 'Blogpost 1',
+          contents: Buffer.from('# Blogpost 1')
+        },
+        'blog/blogpost-2.html': {  // Another file with similar naming pattern as user example
+          title: 'Blogpost 2',
+          contents: Buffer.from('# Blogpost 2')
+        },
+        'products/product-list.html': {
           title: 'Product List',
           contents: Buffer.from('# Product List')
         },
-        'products/productdetails.md': {  // Name starts with directory name
+        'products/productdetails.html': {  // HTML file in products directory
           title: 'Product Details',
           contents: Buffer.from('# Product Details')
         },
-        'news/newsletter.md': {  // Name starts with directory name
+        'news/newsletter.html': {  // HTML file in news directory
           title: 'Newsletter',
           contents: Buffer.from('# Newsletter')
         }
@@ -1698,10 +1706,26 @@ describe('metalsmith-autonav (ESM)', function() {
           if (metadata.nav.blog && metadata.nav.blog.children) {
             // Check that blog/blog-intro.md has the correct path
             const blogChildren = metadata.nav.blog.children;
+            
+            // Check the standard blog-* file first
             if (blogChildren['blog-intro']) {
+              // Blog intro file creates a proper permalink path
               expect(blogChildren['blog-intro'].path).to.equal('/blog/blog-intro/');
               // Should not be /blogblog-intro/
               expect(blogChildren['blog-intro'].path).to.not.include('/blogblog-intro/');
+            }
+            
+            // Check the files that start with "blog" but aren't prefixed
+            if (blogChildren['blogpost-1']) {
+              // Should preserve the original filename - THIS IS THE KEY TEST FOR THE ISSUE
+              expect(blogChildren['blogpost-1'].path).to.equal('/blog/blogpost-1/');
+              expect(blogChildren['blogpost-1'].path).to.not.equal('/blog/post-1/');
+            }
+            
+            if (blogChildren['blogpost-2']) {
+              // Should preserve the original filename - THIS IS THE KEY TEST FOR THE ISSUE
+              expect(blogChildren['blogpost-2'].path).to.equal('/blog/blogpost-2/');
+              expect(blogChildren['blogpost-2'].path).to.not.equal('/blog/post-2/');
             }
           }
           
@@ -1769,11 +1793,11 @@ describe('metalsmith-autonav (ESM)', function() {
           title: 'Blog',
           contents: Buffer.from('# Blog')
         },
-        'blog/blogpost-1.md': {  // File starts with directory name
+        'blog/blogpost-1.html': {  // HTML file in a nested directory
           title: 'First Post',
           contents: Buffer.from('# First Post')
         },
-        'blog/blog-updates.md': {  // File starts with directory name
+        'blog/blog-updates.html': {  // HTML file with similar name as directory
           title: 'Blog Updates',
           contents: Buffer.from('# Blog Updates')
         },
@@ -1789,7 +1813,7 @@ describe('metalsmith-autonav (ESM)', function() {
           title: 'Products',
           contents: Buffer.from('# Products')
         },
-        'products/product1.md': {  // File starts with directory name
+        'products/product1.html': {  // HTML file with similar name as directory
           title: 'Product 1',
           contents: Buffer.from('# Product 1')
         },
@@ -1928,13 +1952,15 @@ describe('metalsmith-autonav (ESM)', function() {
           
           checkNoSelfChildren(metadata.nav);
           
-          // 4. Verify all blog children paths are correctly formatted
+          // 4. Verify all blog children paths are correctly formatted and preserve filenames
           blogChildrenKeys.forEach(key => {
             const child = blog.children[key];
             // All blog children should have paths that include the parent path correctly
             expect(child.path).to.include('/blog/');
             // No child path should have doubled directory name
             expect(child.path).to.not.include('/blogblog');
+            // The path should contain the exact original filename - THIS IS CRITICAL
+            expect(child.path).to.equal(`/blog/${key}/`);
           });
           
           done();
@@ -1945,7 +1971,7 @@ describe('metalsmith-autonav (ESM)', function() {
     });
     
     describe('New Features', () => {
-      it('should mark active and active-trail items', (done) => {
+      it('should store path information for each navigation item', (done) => {
         // Create test files with a nested structure
         const files = {
           'index.md': {
@@ -1958,7 +1984,7 @@ describe('metalsmith-autonav (ESM)', function() {
             contents: Buffer.from('# Subsection')
           },
           'section/subsection/page.md': {
-            contents: Buffer.from('# Active Page')
+            contents: Buffer.from('# Page')
           }
         };
         
@@ -1971,42 +1997,46 @@ describe('metalsmith-autonav (ESM)', function() {
           debug: () => () => {}
         };
         
-        // Custom CSS classes
-        const activeClass = 'custom-active';
-        const activeTrailClass = 'custom-trail';
-        
-        // Run the plugin with custom active classes
-        autonav({
-          activeClass: activeClass,
-          activeTrailClass: activeTrailClass
-        })(files, metalsmithMock, (err) => {
+        // Run the plugin with default options
+        autonav()(files, metalsmithMock, (err) => {
           if (err) {
             return done(err);
           }
           
           try {
-            // Verify all pages have navigation object
+            // Verify all pages have navigation object with path information
             Object.values(files).forEach(file => {
               if (file.navigation) {
                 expect(file.navigation).to.exist;
+                expect(file.navigation.path).to.be.a('string');
+                expect(file.navigation.path).to.match(/^\//); // should start with /
               }
             });
             
-            // Just verify that active trail generation doesn't throw errors
-            // and that navigation objects have been created properly
+            // Verify navigation structure has path information
+            expect(metadata.nav).to.exist;
             
-            // Check that at least one file has navWithActiveTrail
-            const fileWithActiveTrail = Object.values(files).find(file => 
-              file.navigation && file.navigation.navWithActiveTrail
-            );
-            
-            // If we found a file with navWithActiveTrail, this test passes
-            expect(fileWithActiveTrail).to.exist;
-            
-            // Verify that navWithActiveTrail is an object 
-            if (fileWithActiveTrail && fileWithActiveTrail.navigation) {
-              expect(fileWithActiveTrail.navigation.navWithActiveTrail).to.be.an('object');
+            // Make sure all items in the nav tree have paths
+            function verifyPaths(node) {
+              if (!node) return;
+              
+              if (typeof node === 'object') {
+                expect(node.path).to.be.a('string');
+                expect(node.path).to.match(/^\//); // should start with /
+                
+                // Check children if they exist
+                if (node.children) {
+                  Object.values(node.children).forEach(child => {
+                    verifyPaths(child);
+                  });
+                }
+              }
             }
+            
+            // Verify each top-level navigation item
+            Object.values(metadata.nav).forEach(item => {
+              verifyPaths(item);
+            });
             
             done();
           } catch (error) {
@@ -2079,6 +2109,82 @@ describe('metalsmith-autonav (ESM)', function() {
             expect(metadata.blogMenu).to.be.an('object');
             expect(metadata.productMenu).to.be.an('object');
             expect(metadata.mainMenu).to.be.an('object');
+            
+            done();
+          } catch (error) {
+            done(error);
+          }
+        });
+      });
+      
+      it('should handle files that start with directory name but are not malformed paths', (done) => {
+        // Test specifically for the problem where files like blog/blogpost-1.html would get
+        // incorrectly "fixed" to /blog/post-1/ instead of preserving the original name
+        const files = {
+          'index.md': {
+            title: 'Home',
+            contents: Buffer.from('# Home')
+          },
+          'blog/index.md': {
+            title: 'Blog',
+            contents: Buffer.from('# Blog')
+          },
+          'blog/blogpost-1.html': {  // This filename starts with the directory name (blog)
+            title: 'Blogpost 1',
+            contents: Buffer.from('# Blogpost 1')
+          },
+          'blog/blogpost-2.html': {  // This filename also starts with the directory name
+            title: 'Blogpost 2',
+            contents: Buffer.from('# Blogpost 2')
+          },
+          'news/newsupdate.html': {  // This filename starts with the directory name (news)
+            title: 'News Update',
+            contents: Buffer.from('# News Update')
+          }
+        };
+        
+        const metadata = {};
+        
+        const metalsmithMock = {
+          metadata: () => metadata,
+          source: () => 'src',
+          destination: () => 'build',
+          debug: () => () => {}
+        };
+        
+        // Run the plugin
+        autonav()(files, metalsmithMock, (err) => {
+          if (err) {
+            return done(err);
+          }
+          
+          try {
+            // Verify the navigation tree was created
+            expect(metadata.nav).to.exist;
+            expect(metadata.nav.blog).to.exist;
+            expect(metadata.nav.blog.children).to.exist;
+            
+            // Most important check: The key test for the issue
+            // Verify that blogpost-1 and blogpost-2 have correct paths that preserve the original filename
+            const blogChildren = metadata.nav.blog.children;
+            
+            if (blogChildren['blogpost-1']) {
+              const blogpost1 = blogChildren['blogpost-1'];
+              // Must preserve exact original filename - NOT transform to "/blog/post-1/"
+              expect(blogpost1.path).to.equal('/blog/blogpost-1/');
+            }
+            
+            if (blogChildren['blogpost-2']) {
+              const blogpost2 = blogChildren['blogpost-2'];
+              // Must preserve exact original filename - NOT transform to "/blog/post-2/"
+              expect(blogpost2.path).to.equal('/blog/blogpost-2/');
+            }
+            
+            // Also check the news directory for similar issue
+            if (metadata.nav.news && metadata.nav.news.children && metadata.nav.news.children.newsupdate) {
+              // Must preserve exact original filename - NOT transform to "/news/update/"
+              expect(metadata.nav.news.children.newsupdate.path).to.equal('/news/newsupdate/');
+            }
             
             done();
           } catch (error) {

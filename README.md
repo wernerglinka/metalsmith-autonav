@@ -12,7 +12,7 @@ Metalsmith plugin that automatically generates navigation trees and breadcrumb p
 
 - Automatically generates hierarchical navigation from file structure
 - Adds breadcrumb paths to each file
-- Provides path-based active page detection with active trail highlighting
+- Provides normalized paths for client-side active page detection
 - Creates section-specific navigation menus automatically
 - Organizes navigation metadata in a clean, nested structure
 - Intelligent duplicate detection and prevention for clean navigation trees
@@ -104,9 +104,8 @@ These keys control navigation behavior:
 - `navigation.navLabel` - Override the default filename-based label
 - `navigation.navIndex` - Define a page's position in navigation
 - `navigation.navExclude` - Set to true to exclude a page from navigation
-- `navigation.path` - The normalized path used for matching active pages (added automatically)
+- `navigation.path` - The normalized path used for client-side active page detection (added automatically)
 - `navigation.breadcrumb` - Where the breadcrumb path array is stored (added automatically)
-- `navigation.navWithActiveTrail` - A copy of the navigation tree with active and active-trail items marked (added automatically)
 
 ### Navigation Structure
 
@@ -180,29 +179,17 @@ The generated navigation object would look like:
 }
 ```
 
-With active path highlighting enabled, a navigation item for the current page (e.g., `/blog/post1/`) would include these additional properties:
+Each navigation item has a normalized path that can be used for client-side active page detection:
 
 ```javascript
 {
   "title": "Post 1",
   "path": "/blog/post1/", 
-  "children": {},
-  "isActive": true,
-  "activeClass": "active"
+  "children": {}
 }
 ```
 
-And its parent would include:
-
-```javascript
-{
-  "title": "Blog",
-  "path": "/blog/",
-  "children": { /* ... */ },
-  "isActiveTrail": true,
-  "activeTrailClass": "active-trail"
-}
-```
+The normalized paths follow a consistent pattern that makes it easy to use for active page detection in client-side code.
 
 ### Breadcrumb Paths
 
@@ -255,8 +242,6 @@ Example of using breadcrumbs in your templates:
 | sortReverse | Boolean | false | Reverse sort order |
 | pathFilter | Function | null | Custom function to filter file paths |
 | usePermalinks | Boolean | true | Whether to use permalink-style paths (/about/ instead of /about.html) |
-| activeClass | String | 'active' | CSS class to apply to active navigation items |
-| activeTrailClass | String | 'active-trail' | CSS class to apply to parent items of active items |
 | sectionMenus | Object | null | Map of section paths to menu keys for creating section-specific menus |
 | configs | Object | null | Multiple named navigation configurations (see Multiple Navigations example) |
 
@@ -294,23 +279,23 @@ metalsmith(__dirname)
   .catch(err => console.error(err));
 ```
 
-### Active Page Highlighting
+### Client-side Active Page Detection
 
-The plugin stores the current page's path in both the navigation item and the file's navigation metadata. This makes it easy to determine the active page in your templates:
+The plugin stores each page's path in the navigation metadata. This path can be used for client-side active page detection using JavaScript or CSS:
 
 ```nunjucks
-<!-- Main navigation with active page and active trail highlighting -->
+<!-- Main navigation with data attributes for client-side active state detection -->
 <nav>
   <ul class="main-nav">
-    {% for key, item in navigation.navWithActiveTrail %}
-      <li class="{% if item.isActive %}{{ item.activeClass }}{% endif %} {% if item.isActiveTrail %}{{ item.activeTrailClass }}{% endif %}">
+    {% for key, item in navigation %}
+      <li data-nav-path="{{ item.path }}">
         <a href="{{ item.path }}">{{ item.title }}</a>
         
-        <!-- Submenu with active highlighting -->
+        <!-- Submenu -->
         {% if item.children | length > 0 %}
           <ul class="submenu">
             {% for childKey, child in item.children %}
-              <li class="{% if child.isActive %}{{ child.activeClass }}{% endif %}">
+              <li data-nav-path="{{ child.path }}">
                 <a href="{{ child.path }}">{{ child.title }}</a>
               </li>
             {% endfor %}
@@ -320,6 +305,28 @@ The plugin stores the current page's path in both the navigation item and the fi
     {% endfor %}
   </ul>
 </nav>
+```
+
+Then in your client-side JavaScript:
+
+```javascript
+// Get the current path
+const currentPath = window.location.pathname;
+
+// Mark the active navigation item
+document.querySelectorAll('[data-nav-path]').forEach(item => {
+  const navPath = item.getAttribute('data-nav-path');
+  
+  // Exact match for current page
+  if (navPath === currentPath) {
+    item.classList.add('active');
+  }
+  
+  // Parent/ancestor match for active trail
+  if (currentPath.startsWith(navPath) && navPath !== '/') {
+    item.classList.add('active-trail');
+  }
+});
 ```
 
 ### Section-Specific Menus
@@ -446,8 +453,10 @@ The plugin includes advanced handling of navigation paths to prevent common issu
    - Malformed paths with doubled directory names
 
 2. **Path Normalization**: Especially for nested content, paths are properly normalized:
-   - Blog posts: `/blog/post1/` instead of incorrectly formed paths like `/blogpost1/`
-   - Products: `/products/product1/` instead of `/productsproduct1/`
+   - Blog posts: `/blog/post1/` (from blog/post1.html) properly normalized with parent directory
+   - Products: `/products/product1/` (from products/product1.html) properly normalized
+   - Files with names that include parent directory (like `blog/blogpost-1.html`) correctly preserve original filenames in paths (`/blog/blogpost-1/` not `/blog/post-1/`)
+   - Intelligent detection of truly malformed paths vs. legitimate filenames that start with directory name
 
 This ensures your navigation is always clean, consistent, and correctly structured.
 
@@ -619,6 +628,6 @@ MIT
 [metalsmith-url]: https://metalsmith.io
 [license-badge]: https://img.shields.io/github/license/wernerglinka/metalsmith-autonav
 [license-url]: LICENSE
-[coverage-badge]: https://img.shields.io/badge/test%20coverage-91%25-brightgreen
+[coverage-badge]: https://img.shields.io/badge/test%20coverage-92%25-brightgreen
 [coverage-url]: #test-coverage
 [modules-badge]: https://img.shields.io/badge/modules-ESM%2FCJS-blue
