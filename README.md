@@ -12,8 +12,10 @@ Metalsmith plugin that automatically generates navigation trees and breadcrumb p
 
 - Automatically generates hierarchical navigation from file structure
 - Adds breadcrumb paths to each file
+- Provides path-based active page detection with active trail highlighting
+- Creates section-specific navigation menus automatically
+- Organizes navigation metadata in a clean, nested structure
 - Sorts navigation items based on custom properties
-- Fully customizable options for determining navigation titles and paths
 - Multiple navigation configurations in a single pass (e.g., header, footer, sidebar)
 - Smart handling of directory nodes in navigation
 - Flexible path handling with permalink support
@@ -30,7 +32,7 @@ npm install metalsmith-autonav
 
 This plugin follows the standard Metalsmith plugin pattern and can be used both with ESM and CommonJS.
 
-> **IMPORTANT**: This plugin must be used **before** the layouts plugin in your Metalsmith build chain. At this point, all your content files will have been transformed to `.html` files, which the autonav plugin expects.
+> **IMPORTANT**: This plugin must be used **after** the markdown plugin and before the layouts plugin in your Metalsmith build chain, because it expects HTML files or Markdown files that will be converted to HTML.
 
 ### ESM (preferred)
 
@@ -44,9 +46,7 @@ metalsmith(__dirname)
   .use(markdown()) // Convert Markdown to HTML
   .use(autonav({  // Then generate navigation
     // options go here
-    navKey: 'navigation',
-    breadcrumbKey: 'breadcrumbs',
-    navLabelKey: 'navLabel'
+    navKey: 'navigation'
   }))
   .use(layouts()) // Apply layouts
   .build((err) => {
@@ -67,9 +67,7 @@ metalsmith(__dirname)
   .use(markdown()) // Convert Markdown to HTML
   .use(autonav({  // Then generate navigation
     // options go here
-    navKey: 'navigation',
-    breadcrumbKey: 'breadcrumbs',
-    navLabelKey: 'navLabel'
+    navKey: 'navigation'
   }))
   .use(layouts()) // Apply layouts
   .build((err) => {
@@ -82,12 +80,35 @@ metalsmith(__dirname)
 
 The plugin scans all files and generates:
 
-1. A simpleflat navigation structure
+1. A flat navigation structure with hierarchical children
 2. Breadcrumb paths in each file's metadata
+
+### File Metadata Keys
+
+The plugin organizes all navigation-related metadata in a `navigation` object in frontmatter:
+
+```markdown
+---
+title: About Us
+navigation:
+  navLabel: About Our Company
+  navIndex: 2
+  navExclude: false
+---
+```
+
+These keys control navigation behavior:
+
+- `navigation.navLabel` - Override the default filename-based label
+- `navigation.navIndex` - Define a page's position in navigation
+- `navigation.navExclude` - Set to true to exclude a page from navigation
+- `navigation.path` - The normalized path used for matching active pages (added automatically)
+- `navigation.breadcrumb` - Where the breadcrumb path array is stored (added automatically)
+- `navigation.navWithActiveTrail` - A copy of the navigation tree with active and active-trail items marked (added automatically)
 
 ### Navigation Structure
 
-The navigation structure features a simple flat organization. Each page may have its own children, maintaining a hierarchical structure for nested content.
+The navigation structure features a simple flat organization at the top level. Each page may have its own children, maintaining a hierarchical structure for nested content.
 
 Each navigation item contains only the essential properties:
 
@@ -117,7 +138,8 @@ The generated navigation object would look like:
 {
   "home": {
     "title": "Home",
-    "path": "/"
+    "path": "/",
+    "children": {}
   },
   "about": {
     "title": "About",
@@ -183,7 +205,7 @@ Example of using breadcrumbs in your templates:
 ```nunjucks
 <!-- Display breadcrumbs -->
 <ul class="breadcrumbs">
-  {% for item in breadcrumb %}
+  {% for item in navigation.breadcrumb %}
     {% if loop.last %}
       <li>{{ item.title }}</li>
     {% else %}
@@ -198,17 +220,26 @@ Example of using breadcrumbs in your templates:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | navKey | String | 'nav' | Key in metalsmith metadata for the navigation object |
-| navLabelKey | String/Function | 'navLabel' | Frontmatter property to override the default filename-based label, or a function for custom labels |
-| navIndexKey | String | 'navIndex' | File property that defines a page's position in navigation |
-| navExcludeKey | String | 'navExclude' | File property to exclude a page from navigation |
-| breadcrumbKey | String | 'breadcrumb' | Key in file metadata for the breadcrumb path array |
+| navigationObjectKey | String | 'navigation' | Key for the object containing navigation metadata in frontmatter |
 | navHomePage | Boolean | true | Include home page in breadcrumb |
-| navHomeLabel | String | 'Home' | Label for home page in breadcrumb (can be overridden with navLabel) |
+| navHomeLabel | String | 'Home' | Label for home page in breadcrumb |
 | sortBy | String/Function | 'navIndex' | Property to sort navigation items by, or custom sort function |
 | sortReverse | Boolean | false | Reverse sort order |
 | pathFilter | Function | null | Custom function to filter file paths |
 | usePermalinks | Boolean | true | Whether to use permalink-style paths (/about/ instead of /about.html) |
+| activeClass | String | 'active' | CSS class to apply to active navigation items |
+| activeTrailClass | String | 'active-trail' | CSS class to apply to parent items of active items |
+| sectionMenus | Object | null | Map of section paths to menu keys for creating section-specific menus |
 | configs | Object | null | Multiple named navigation configurations (see Multiple Navigations example) |
+
+## Label Generation Logic
+
+The plugin uses a simple and intuitive approach for generating navigation labels:
+
+1. By default, converts filenames to title case (e.g., "about-us.md" becomes "About Us")
+2. For index files, uses the parent directory name in title case (e.g., "blog/index.md" becomes "Blog")
+3. Can be overridden with a `navLabel` property in frontmatter (e.g., `navLabel: "Custom Label"`)
+4. Advanced users can provide a function for custom label generation via the `navLabelKey` option
 
 ## Examples
 
@@ -223,8 +254,7 @@ metalsmith(__dirname)
   .use(async (files, metalsmith) => {
     // You can await the autonav plugin
     await autonav({
-      navKey: 'navigation',
-      navLabelKey: 'navLabel'
+      navKey: 'navigation'
     })(files, metalsmith);
     
     // Do something with the navigation data
@@ -234,35 +264,83 @@ metalsmith(__dirname)
   .build()
   .then(() => console.log('Build complete!'))
   .catch(err => console.error(err));
+```
 
-// With promises
-metalsmith(__dirname)
-  .use(markdown())
-  .use((files, metalsmith) => {
-    return autonav({
-      navKey: 'navigation',
-      navLabelKey: 'navLabel'
-    })(files, metalsmith)
-      .then(() => {
-        // Do something with the navigation data
-        console.log('Navigation generated:', metalsmith.metadata().navigation);
-      });
-  })
-  .use(layouts())
-  .build()
-  .then(() => console.log('Build complete!'))
-  .catch(err => console.error(err));
+### Active Page Highlighting
+
+The plugin stores the current page's path in both the navigation item and the file's navigation metadata. This makes it easy to determine the active page in your templates:
+
+```nunjucks
+<!-- Main navigation with active page and active trail highlighting -->
+<nav>
+  <ul class="main-nav">
+    {% for key, item in navigation.navWithActiveTrail %}
+      <li class="{% if item.isActive %}{{ item.activeClass }}{% endif %} {% if item.isActiveTrail %}{{ item.activeTrailClass }}{% endif %}">
+        <a href="{{ item.path }}">{{ item.title }}</a>
+        
+        <!-- Submenu with active highlighting -->
+        {% if item.children | length > 0 %}
+          <ul class="submenu">
+            {% for childKey, child in item.children %}
+              <li class="{% if child.isActive %}{{ child.activeClass }}{% endif %}">
+                <a href="{{ child.path }}">{{ child.title }}</a>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</nav>
+```
+
+### Section-Specific Menus
+
+The plugin can automatically create section-specific menus by extracting portions of the main navigation tree. This is useful for showing relevant sub-navigation in different parts of your site.
+
+Configure section menus using the `sectionMenus` option:
+
+```javascript
+metalsmith.use(autonav({
+  // Main navigation settings
+  navKey: 'mainNav',
+  
+  // Section-specific menus
+  sectionMenus: {
+    '/blog/': 'blogMenu',     // Creates a blogMenu from the /blog section
+    '/products/': 'productNav',  // Creates a productNav from the /products section
+    '/': 'topMenu'            // Creates a topMenu from the root level
+  }
+}));
+```
+
+Then in your templates, you can use these section-specific menus:
+
+```nunjucks
+<!-- Blog sidebar navigation - shows only blog section items -->
+{% if blogMenu %}
+  <nav class="blog-sidebar">
+    <h3>Blog Categories</h3>
+    <ul>
+      {% for key, item in blogMenu %}
+        <li><a href="{{ item.path }}">{{ item.title }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+{% endif %}
 ```
 
 ### Custom Navigation Titles
 
 By default, the plugin uses the filename converted to title case for navigation labels (e.g., "about-us.md" becomes "About Us").
 
-To customize a page's navigation label, add the `navLabel` property to its frontmatter:
+To customize a page's navigation label, add the `navLabel` property to the navigation object in frontmatter:
 
 ```markdown
 ---
-navLabel: My Custom Nav Label
+title: About Us
+navigation:
+  navLabel: My Custom Nav Label
 ---
 ```
 
@@ -309,11 +387,13 @@ metalsmith.use(autonav({
 
 ### Excluding Pages
 
-To exclude a page from navigation at navExclude to the page frontmatter:
+To exclude a page from navigation, add `navExclude: true` to the navigation object in frontmatter:
 
 ```markdown
 ---
-navExclude: true
+title: Secret Page
+navigation:
+  navExclude: true
 ---
 ```
 
@@ -347,7 +427,7 @@ metalsmith.use(autonav({
 Typical usage with the metalsmith-permalinks plugin:
 
 ```javascript
-// Process markdown  first
+// Process markdown first
 metalsmith
   .use(markdown())
   
@@ -389,7 +469,6 @@ metalsmith.use(autonav({
     footer: {
       navKey: 'footerNav',
       navExcludeKey: 'excludeFromFooter',
-      // No breadcrumbs for footer
       sortBy: 'footerOrder'
     },
     
@@ -405,36 +484,38 @@ metalsmith.use(autonav({
 
 Then in your templates, access each navigation structure separately:
 
-```handlebars
+```nunjucks
 <!-- Main navigation in header -->
-<nav class="main-nav">
-  {{#each metadata.mainNav as |item key|}}
-    {{#if (ne key "home")}} <!-- Skip home in the menu if desired -->
-      <a href="{{item.path}}">{{item.title}}</a>
-      
-      <!-- Display children if any -->
-      {{#if item.children}}
-        <ul class="submenu">
-          {{#each item.children as |child childKey|}}
-            <li><a href="{{child.path}}">{{child.title}}</a></li>
-          {{/each}}
-        </ul>
-      {{/if}}
-    {{/if}}
-  {{/each}}
-</nav>
+<header>
+  <nav>
+    <ul class="main-nav">
+      {% for key, item in mainNav %}
+        <li>
+          <a href="{{ item.path }}">{{ item.title }}</a>
+          {% if item.children | length > 0 %}
+            <ul class="submenu">
+              {% for childKey, child in item.children %}
+                <li><a href="{{ child.path }}">{{ child.title }}</a></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </nav>
+</header>
 
 <!-- Footer navigation -->
-<nav class="footer-nav">
-  {{#each metadata.footerNav as |item key|}}
-    {{#if (ne key "home")}} <!-- Skip home in the menu if desired -->
-      <a href="{{item.path}}">{{item.title}}</a>
-    {{/if}}
-  {{/each}}
-</nav>
+<footer>
+  <nav>
+    <ul class="footer-nav">
+      {% for key, item in footerNav %}
+        <li><a href="{{ item.path }}">{{ item.title }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+</footer>
 ```
-
-Note the use of `{{#each metadata.mainNav as |item key|}}` which iterates over the flat structure of pages at the root level. The `key` is the page identifier (e.g., "home", "about", "blog") and `item` is the navigation object with its properties.
 
 ## Test Coverage
 
@@ -454,10 +535,16 @@ npm run coverage
 
 ## Debug
 
-This plugin uses metalsmith's debug functionality. To enable debug logs, set the `DEBUG` environment variable:
+To enable debug logs, set the `DEBUG` environment variable:
 
 ```bash
-DEBUG=metalsmith-autonav node your-metalsmith-build.js
+DEBUG=metalsmith-autonav* metalsmith
+```
+
+Or in your code:
+
+```javascript
+metalsmith.env('DEBUG', 'metalsmith-autonav*')
 ```
 
 ## CLI Usage
@@ -468,14 +555,12 @@ To use this plugin with the Metalsmith CLI, add it to your `metalsmith.json` fil
 {
   "plugins": {
     "metalsmith-markdown": {},
+    "metalsmith-autonav": {
+      "navKey": "navigation"
+    },
     "metalsmith-layouts": {
       "default": "default.njk",
       "directory": "layouts"
-    },
-    "metalsmith-autonav": {
-      "navKey": "navigation",
-      "breadcrumbKey": "breadcrumbs",
-      "navLabelKey": "navLabel"
     }
   }
 }
@@ -491,6 +576,6 @@ MIT
 [metalsmith-url]: https://metalsmith.io
 [license-badge]: https://img.shields.io/github/license/wernerglinka/metalsmith-autonav
 [license-url]: LICENSE
-[coverage-badge]: https://img.shields.io/badge/test%20coverage-96%25-brightgreen
+[coverage-badge]: https://img.shields.io/badge/test%20coverage-95%25-brightgreen
 [coverage-url]: #test-coverage
 [modules-badge]: https://img.shields.io/badge/modules-ESM%2FCJS-blue
